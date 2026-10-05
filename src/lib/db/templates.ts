@@ -1,10 +1,18 @@
 import fs from 'fs';
 import path from 'path';
-import { PosterTemplate, CreateTemplateInput } from '@/lib/types/template';
-import { supabase, supabaseAdmin, isSupabaseConfigured } from '@/lib/supabase';
+import crypto from 'crypto';
+import { PosterTemplate, CreateTemplateInput, PhotoArea } from '@/lib/types/template';
+import {
+  supabase,
+  supabaseAdmin,
+  isSupabaseConfigured,
+  isSupabaseAdminConfigured,
+} from '@/lib/supabase';
 import { deletePosterFromStorage } from '@/lib/server-storage';
 
 const DATA_FILE_PATH = path.join(process.cwd(), 'data.json');
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const DEFAULT_TEMPLATES: PosterTemplate[] = [
   {
@@ -129,6 +137,20 @@ export const DEFAULT_TEMPLATES: PosterTemplate[] = [
   },
 ];
 
+function parseCanvasConfig(raw: unknown): PhotoArea {
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return { x: 200, y: 250, width: 680, height: 650, borderRadius: 16, layer: 'inside' };
+    }
+  }
+  if (raw && typeof raw === 'object') {
+    return raw as PhotoArea;
+  }
+  return { x: 200, y: 250, width: 680, height: 650, borderRadius: 16, layer: 'inside' };
+}
+
 function readData(): PosterTemplate[] {
   try {
     if (!fs.existsSync(DATA_FILE_PATH)) {
@@ -160,8 +182,11 @@ function writeData(templates: PosterTemplate[]) {
 }
 
 export const templateDb = {
+  /**
+   * Fetches all poster templates from Supabase with graceful fallback/merge
+   * to ensure ready-made posters are always accessible.
+   */
   getAll: async (): Promise<PosterTemplate[]> => {
-    // If Supabase is configured, try fetching remote templates
     if (isSupabaseConfigured) {
       try {
         const { data, error } = await supabase
@@ -169,7 +194,7 @@ export const templateDb = {
           .select('*')
           .order('created_at', { ascending: false });
 
-        if (!error && Array.isArray(data) && data.length > 0) {
+        if (!error && Array.isArray(data)) {
           const remoteList: PosterTemplate[] = data.map((row) => ({
             id: String(row.id),
             title: row.title,
@@ -179,15 +204,12 @@ export const templateDb = {
             width: Number(row.width) || 1080,
             height: Number(row.height) || 1350,
             posterImage: row.base_image_url,
-            photoArea:
-              typeof row.canvas_config === 'string'
-                ? JSON.parse(row.canvas_config)
-                : row.canvas_config,
+            photoArea: parseCanvasConfig(row.canvas_config),
             sampleUserPhoto: '/templates/sample-portrait.jpg',
             createdAt: row.created_at || new Date().toISOString(),
           }));
 
-          // Merge local defaults if any are missing
+          // Merge local/default templates so existing templates never 404
           const localList = readData();
           const merged = [...remoteList];
           for (const localTpl of localList) {
@@ -205,14 +227,23 @@ export const templateDb = {
     return readData();
   },
 
-  getBySlug: async (slug: string): Promise<PosterTemplate | null> => {
+  /**
+   * Fetches a single poster template by slug or unique ID.
+   * Handles UUID check carefully so PostgreSQL does not throw a 22P02 syntax error.
+   */
+  getBySlug: async (slugOrId: string): Promise<PosterTemplate | null> => {
     if (isSupabaseConfigured) {
       try {
-        const { data, error } = await supabase
-          .from('templates')
-          .select('*')
-          .or(`slug.eq.${slug},id.eq.${slug}`)
-          .maybeSingle();
+        const isUuid = UUID_REGEX.test(slugOrId);
+        let query = supabase.from('templates').select('*');
+
+        if (isUuid) {
+          query = query.or(`id.eq.${slugOrId},slug.eq.${slugOrId}`);
+        } else {
+          query = query.eq('slug', slugOrId);
+        }
+
+        const { data, error } = await query.maybeSingle();
 
         if (!error && data) {
           return {
@@ -224,10 +255,7 @@ export const templateDb = {
             width: Number(data.width) || 1080,
             height: Number(data.height) || 1350,
             posterImage: data.base_image_url,
-            photoArea:
-              typeof data.canvas_config === 'string'
-                ? JSON.parse(data.canvas_config)
-                : data.canvas_config,
+            photoArea: parseCanvasConfig(data.canvas_config),
             sampleUserPhoto: '/templates/sample-portrait.jpg',
             createdAt: data.created_at || new Date().toISOString(),
           };
@@ -238,88 +266,164 @@ export const templateDb = {
     }
 
     const list = readData();
-    return list.find((t) => t.slug === slug || t.id === slug) || null;
+    return list.find((t) => t.slug === slugOrId || t.id === slugOrId) || null;
   },
 
+  /**
+   * Fetches template by unique database ID.
+   */
   getById: async (id: string): Promise<PosterTemplate | null> => {
     return templateDb.getBySlug(id);
   },
 
+  /**
+   * Creates a new poster template:
+   * 1. Inserts into Supabase 'templates' database table using elevated server client.
+   * 2. Obtains the unique database UUID.
+   * 3. Retains the exact photo-area configuration associated with that record.
+   * 4. Syncs locally to maintain offline/fallback availability.
+   */
   create: async (input: CreateTemplateInput): Promise<PosterTemplate> => {
     const list = readData();
-    const newTemplate: PosterTemplate = {
-      ...input,
-      id: `tpl-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      createdAt: new Date().toISOString(),
-    };
 
-    // Save locally
-    list.unshift(newTemplate);
-    writeData(list);
-
-    // Sync to Supabase Database if configured
-    if (isSupabaseConfigured) {
+    // 1. If Supabase admin client is configured, save directly to database
+    if (isSupabaseAdminConfigured) {
       try {
-        await supabaseAdmin.from('templates').insert({
-          title: newTemplate.title,
-          slug: newTemplate.slug,
-          base_image_url: newTemplate.posterImage,
-          canvas_config: JSON.stringify(newTemplate.photoArea),
-          category: newTemplate.category,
-          description: newTemplate.description,
-          width: newTemplate.width,
-          height: newTemplate.height,
-        });
+        const { data, error } = await supabaseAdmin
+          .from('templates')
+          .insert({
+            title: input.title,
+            slug: input.slug,
+            base_image_url: input.posterImage,
+            canvas_config: JSON.stringify(input.photoArea),
+            category: input.category || 'General',
+            description: input.description || '',
+            width: input.width || 1080,
+            height: input.height || 1350,
+          })
+          .select('*')
+          .single();
+
+        if (!error && data) {
+          const created: PosterTemplate = {
+            id: String(data.id),
+            title: data.title,
+            slug: data.slug,
+            description: data.description || '',
+            category: data.category || 'General',
+            width: Number(data.width) || 1080,
+            height: Number(data.height) || 1350,
+            posterImage: data.base_image_url,
+            photoArea: parseCanvasConfig(data.canvas_config),
+            sampleUserPhoto: '/templates/sample-portrait.jpg',
+            createdAt: data.created_at || new Date().toISOString(),
+          };
+
+          // Cache locally
+          list.unshift(created);
+          writeData(list);
+          return created;
+        } else if (error) {
+          console.warn('Supabase database insert returned error, falling back to local:', error.message);
+        }
       } catch (err) {
-        console.warn('Error syncing new template to Supabase DB:', err);
+        console.warn('Error inserting template into Supabase DB, falling back to local:', err);
       }
     }
 
-    return newTemplate;
+    // Fallback local storage
+    const fallbackTemplate: PosterTemplate = {
+      ...input,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+    };
+
+    list.unshift(fallbackTemplate);
+    writeData(list);
+    return fallbackTemplate;
   },
 
-  update: async (slug: string, updates: Partial<PosterTemplate>): Promise<PosterTemplate | null> => {
+  /**
+   * Updates an existing poster template record in Supabase & locally.
+   */
+  update: async (slugOrId: string, updates: Partial<PosterTemplate>): Promise<PosterTemplate | null> => {
     const list = readData();
-    const index = list.findIndex((t) => t.slug === slug || t.id === slug);
-    if (index === -1) return null;
-    list[index] = { ...list[index], ...updates };
-    writeData(list);
+    const index = list.findIndex((t) => t.slug === slugOrId || t.id === slugOrId);
+    if (index !== -1) {
+      list[index] = { ...list[index], ...updates };
+      writeData(list);
+    }
 
-    if (isSupabaseConfigured) {
+    if (isSupabaseAdminConfigured) {
       try {
         const payload: Record<string, unknown> = {};
         if (updates.title) payload.title = updates.title;
-        if (updates.description) payload.description = updates.description;
+        if (updates.description !== undefined) payload.description = updates.description;
         if (updates.category) payload.category = updates.category;
         if (updates.photoArea) payload.canvas_config = JSON.stringify(updates.photoArea);
         if (updates.posterImage) payload.base_image_url = updates.posterImage;
-        await supabaseAdmin.from('templates').update(payload).or(`slug.eq.${slug},id.eq.${slug}`);
+
+        const isUuid = UUID_REGEX.test(slugOrId);
+        let query = supabaseAdmin.from('templates').update(payload);
+
+        if (isUuid) {
+          query = query.or(`id.eq.${slugOrId},slug.eq.${slugOrId}`);
+        } else {
+          query = query.eq('slug', slugOrId);
+        }
+
+        const { data } = await query.select('*').maybeSingle();
+        if (data) {
+          return {
+            id: String(data.id),
+            title: data.title,
+            slug: data.slug,
+            description: data.description || '',
+            category: data.category || 'General',
+            width: Number(data.width) || 1080,
+            height: Number(data.height) || 1350,
+            posterImage: data.base_image_url,
+            photoArea: parseCanvasConfig(data.canvas_config),
+            sampleUserPhoto: '/templates/sample-portrait.jpg',
+            createdAt: data.created_at || new Date().toISOString(),
+          };
+        }
       } catch (err) {
         console.warn('Error updating template in Supabase DB:', err);
       }
     }
 
-    return list[index];
+    return index !== -1 ? list[index] : null;
   },
 
-  delete: async (id: string): Promise<boolean> => {
+  /**
+   * Deletes a poster template from Supabase Storage & Database.
+   */
+  delete: async (slugOrId: string): Promise<boolean> => {
     const list = readData();
-    const toDelete = list.find((t) => t.id === id || t.slug === id);
-    const filtered = list.filter((t) => t.id !== id && t.slug !== id);
+    const toDelete = list.find((t) => t.id === slugOrId || t.slug === slugOrId);
+    const filtered = list.filter((t) => t.id !== slugOrId && t.slug !== slugOrId);
 
     if (toDelete?.posterImage) {
       await deletePosterFromStorage(toDelete.posterImage);
     }
 
-    if (filtered.length === list.length && !isSupabaseConfigured) {
-      return false;
+    if (filtered.length !== list.length) {
+      writeData(filtered);
     }
 
-    writeData(filtered);
-
-    if (isSupabaseConfigured) {
+    if (isSupabaseAdminConfigured) {
       try {
-        await supabaseAdmin.from('templates').delete().or(`id.eq.${id},slug.eq.${id}`);
+        const isUuid = UUID_REGEX.test(slugOrId);
+        let query = supabaseAdmin.from('templates').delete();
+
+        if (isUuid) {
+          query = query.or(`id.eq.${slugOrId},slug.eq.${slugOrId}`);
+        } else {
+          query = query.eq('slug', slugOrId);
+        }
+
+        await query;
       } catch (err) {
         console.warn('Error deleting template from Supabase DB:', err);
       }
@@ -328,6 +432,9 @@ export const templateDb = {
     return true;
   },
 
+  /**
+   * Resets templates to default ready-made posters.
+   */
   resetDefaults: async (): Promise<PosterTemplate[]> => {
     writeData(DEFAULT_TEMPLATES);
     return DEFAULT_TEMPLATES;

@@ -93,11 +93,19 @@ export async function POST(request: Request) {
       }
 
       if (file && file.size > 0) {
+        const mimeType = file.type || 'image/png';
+        if (!mimeType.startsWith('image/')) {
+          return NextResponse.json(
+            { error: 'Invalid file type. Please upload a valid image (PNG, JPG, WebP, SVG).' },
+            { status: 400 }
+          );
+        }
+
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         uploadedBuffer = buffer;
         const originalName = file.name || `poster-${Date.now()}.png`;
-        finalImageUrl = await uploadPosterToStorage(buffer, originalName, file.type || 'image/png');
+        finalImageUrl = await uploadPosterToStorage(buffer, originalName, mimeType);
 
         // Automatically infer title from filename if not explicitly provided
         if (!title.trim()) {
@@ -209,8 +217,9 @@ export async function POST(request: Request) {
     const created = await templateDb.create(templateInput);
     return NextResponse.json(created, { status: 201 });
   } catch (error: unknown) {
-    console.error('Error creating template:', error);
-    const message = error instanceof Error ? error.message : 'Failed to create template';
-    return NextResponse.json({ error: message }, { status: 500 });
+    const rawMessage = error instanceof Error ? error.message : 'Failed to create template';
+    const cleanMessage = rawMessage.replace(/sb_[A-Za-z0-9_-]+/g, '[REDACTED]');
+    console.error('Error creating template:', cleanMessage);
+    return NextResponse.json({ error: cleanMessage }, { status: 500 });
   }
 }

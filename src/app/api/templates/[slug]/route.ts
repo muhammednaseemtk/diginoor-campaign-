@@ -15,8 +15,10 @@ export async function GET(
     
     return NextResponse.json(template);
   } catch (error) {
-    console.error('Error fetching template:', error);
-    return NextResponse.json({ error: 'Failed to fetch template' }, { status: 500 });
+    const rawMessage = error instanceof Error ? error.message : 'Failed to fetch template';
+    const cleanMessage = rawMessage.replace(/sb_[A-Za-z0-9_-]+/g, '[REDACTED]');
+    console.error('Error fetching template:', cleanMessage);
+    return NextResponse.json({ error: cleanMessage }, { status: 500 });
   }
 }
 
@@ -35,8 +37,10 @@ export async function PUT(
     
     return NextResponse.json(updated);
   } catch (error) {
-    console.error('Error updating template:', error);
-    return NextResponse.json({ error: 'Failed to update template' }, { status: 500 });
+    const rawMessage = error instanceof Error ? error.message : 'Failed to update template';
+    const cleanMessage = rawMessage.replace(/sb_[A-Za-z0-9_-]+/g, '[REDACTED]');
+    console.error('Error updating template:', cleanMessage);
+    return NextResponse.json({ error: cleanMessage }, { status: 500 });
   }
 }
 
@@ -54,7 +58,9 @@ export async function DELETE(
     
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error deleting template:', error);
-    return NextResponse.json({ error: 'Failed to delete template' }, { status: 500 });
+    const rawMessage = error instanceof Error ? error.message : 'Failed to delete template';
+    const cleanMessage = rawMessage.replace(/sb_[A-Za-z0-9_-]+/g, '[REDACTED]');
+    console.error('Error deleting template:', cleanMessage);
+    return NextResponse.json({ error: cleanMessage }, { status: 500 });
   }
 }
