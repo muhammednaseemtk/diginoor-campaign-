@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1350" width="1080" height="1350">
+  <defs>
+    <linearGradient id="ivoryBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="50%" stop-color="#fffdfa"/>
+      <stop offset="100%" stop-color="#fbf7ee"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#d4af37"/>
+      <stop offset="50%" stop-color="#aa771c"/>
+      <stop offset="100%" stop-color="#80540d"/>
+    </linearGradient>
+    <linearGradient id="goldBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e5c066"/>
+      <stop offset="100%" stop-color="#b8860b"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Warm Clean Ivory Background -->
+  <rect width="1080" height="1350" fill="url(#ivoryBg)"/>
+
+  <!-- Ornate Border Frame -->
+  <rect x="50" y="50" width="980" height="1250" rx="16" fill="none" stroke="url(#gold)" stroke-width="3" stroke-opacity="0.7"/>
+  <rect x="62" y="62" width="956" height="1226" rx="12" fill="none" stroke="url(#gold)" stroke-width="1" stroke-opacity="0.4"/>
+
+  <!-- Corner Flourishes -->
+  <g stroke="url(#gold)" stroke-width="2" fill="none">
+    <path d="M 50 110 A 60 60 0 0 0 110 50"/>
+    <path d="M 1030 110 A 60 60 0 0 1 970 50"/>
+    <path d="M 50 1240 A 60 60 0 0 1 110 1300"/>
+    <path d="M 1030 1240 A 60 60 0 0 0 970 1300"/>
+  </g>
+
+  <!-- Header Laurel Crown Icon & Star -->
+  <g transform="translate(540, 130)">
+    <circle cx="0" cy="0" r="32" fill="#fff9eb" stroke="url(#gold)" stroke-width="2"/>
+    <path d="M 0 -15 L 4 -3 L 16 -3 L 7 5 L 10 17 L 0 10 L -10 17 L -7 5 L -16 -3 L -4 -3 Z" fill="url(#gold)"/>
+  </g>
+
+  <!-- Typography -->
+  <text x="540" y="210" text-anchor="middle" fill="url(#gold)" font-family="Georgia, 'Times New Roman', serif" font-size="20" font-weight="700" letter-spacing="6">CERTIFICATE OF RECOGNITION</text>
+  <text x="540" y="265" text-anchor="middle" fill="#1e293b" font-family="Georgia, 'Times New Roman', serif" font-size="46" font-weight="bold" letter-spacing="2">EMPLOYEE OF THE MONTH</text>
+
+  <!-- Predefined Photo Area: x=240, y=300, width=600, height=600, rx=20 -->
+  <g transform="translate(240, 300)">
+    <rect width="600" height="600" rx="20" fill="#ffffff" stroke="url(#goldBorder)" stroke-width="4"/>
+    <rect x="8" y="8" width="584" height="584" rx="16" fill="#fdfbf7"/>
+    <!-- Placeholder Hint -->
+    <circle cx="300" cy="270" r="50" fill="none" stroke="url(#gold)" stroke-width="2" stroke-dasharray="6 4"/>
+    <text x="300" y="360" text-anchor="middle" fill="url(#gold)" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="700" letter-spacing="1">INSERT HONOREE PHOTO</text>
+    <text x="300" y="390" text-anchor="middle" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="14">Dimensions: 600 × 600 px (1:1 Ratio)</text>
+  </g>
+
+  <!-- Award Description & Ribbon -->
+  <g transform="translate(540, 960)">
+    <text x="0" y="0" text-anchor="middle" fill="#334155" font-family="Georgia, 'Times New Roman', serif" font-size="24" font-style="italic">"For outstanding commitment, leadership, and exemplary dedication"</text>
+    <line x1="-200" y1="30" x2="200" y2="30" stroke="url(#gold)" stroke-width="1.5" stroke-opacity="0.6"/>
+    <text x="0" y="70" text-anchor="middle" fill="url(#gold)" font-family="Georgia, 'Times New Roman', serif" font-size="28" font-weight="bold">LEADERSHIP &amp; EXCELLENCE AWARD</text>
+    <text x="0" y="105" text-anchor="middle" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="16" letter-spacing="1">PRESENTED THIS QUARTER • GLOBAL OPERATIONS DIVISION</text>
+  </g>
+
+  <!-- Bottom Seal -->
+  <g transform="translate(540, 1190)">
+    <circle cx="0" cy="0" r="38" fill="#fff9eb"/>
+    <circle cx="0" cy="0" r="34" fill="none" stroke="url(#gold)" stroke-width="2"/>
+    <text x="0" y="6" text-anchor="middle" fill="url(#gold)" font-family="Georgia, serif" font-size="12" font-weight="bold">OFFICIAL SEAL</text>
+  </g>
+</svg>

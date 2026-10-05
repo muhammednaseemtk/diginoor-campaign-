@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1350" width="1080" height="1350">
+  <defs>
+    <linearGradient id="gradLight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="50%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#eff6ff"/>
+    </linearGradient>
+    <linearGradient id="goldCap" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#d97706"/>
+      <stop offset="100%" stop-color="#b45309"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1080" height="1350" fill="url(#gradLight)"/>
+
+  <!-- Golden Stars & Confetti dots -->
+  <circle cx="120" cy="180" r="5" fill="#f59e0b" opacity="0.7"/>
+  <circle cx="940" cy="160" r="6" fill="#3b82f6" opacity="0.6"/>
+  <circle cx="160" cy="980" r="6" fill="#f59e0b" opacity="0.5"/>
+  <circle cx="920" cy="1020" r="5" fill="#3b82f6" opacity="0.6"/>
+
+  <!-- Graduation Cap Icon -->
+  <g transform="translate(540, 110)">
+    <polygon points="0,-20 40,-5 0,10 -40,-5" fill="url(#goldCap)"/>
+    <path d="M -25,0 L -25,18 Q 0,30 25,18 L 25,0" fill="none" stroke="url(#goldCap)" stroke-width="2.5"/>
+    <line x1="35" y1="-3" x2="45" y2="20" stroke="#d97706" stroke-width="2"/>
+    <circle cx="45" cy="22" r="3" fill="#d97706"/>
+  </g>
+
+  <text x="540" y="190" text-anchor="middle" fill="#d97706" font-family="Georgia, serif" font-size="22" letter-spacing="6">CONGRATULATIONS</text>
+  <text x="540" y="245" text-anchor="middle" fill="#0f172a" font-family="Georgia, serif" font-size="52" font-weight="bold">CLASS OF 2026</text>
+
+  <!-- Photo Area: x=240, y=290, width=600, height=620, rx=24 -->
+  <g transform="translate(240, 290)">
+    <rect width="600" height="620" rx="24" fill="#ffffff" stroke="#2563eb" stroke-width="4"/>
+    <rect x="4" y="4" width="592" height="612" rx="20" fill="#eff6ff" opacity="0.7"/>
+    <circle cx="300" cy="270" r="55" fill="#ffffff" stroke="#d97706" stroke-width="2" stroke-dasharray="6 4"/>
+    <text x="300" y="360" text-anchor="middle" fill="#1e3a8a" font-family="Georgia, serif" font-size="22">GRADUATE PORTRAIT</text>
+    <text x="300" y="395" text-anchor="middle" fill="#64748b" font-family="system-ui, sans-serif" font-size="14">Dimensions: 600 × 620 px • Auto-cropped</text>
+  </g>
+
+  <!-- Bottom Honors Card -->
+  <g transform="translate(540, 970)">
+    <text x="0" y="0" text-anchor="middle" fill="#1e293b" font-family="Georgia, serif" font-size="26" font-style="italic">"The future belongs to those who believe in the beauty of their dreams."</text>
+    <text x="0" y="50" text-anchor="middle" fill="#d97706" font-family="Georgia, serif" font-size="24" font-weight="bold">DEGREE OF ACADEMIC EXCELLENCE</text>
+    <text x="0" y="85" text-anchor="middle" fill="#64748b" font-family="system-ui, sans-serif" font-size="16">COMMENCEMENT CEREMONY • MAY 28, 2026</text>
+  </g>
+
+  <!-- Bottom Border -->
+  <line x1="200" y1="1120" x2="880" y2="1120" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="540" y="1170" text-anchor="middle" fill="#2563eb" font-family="system-ui, sans-serif" font-size="15" font-weight="600">HONOR ROLL • SUMMA CUM LAUDE</text>
+</svg>

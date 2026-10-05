@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1350" width="1080" height="1350">
+  <defs>
+    <linearGradient id="bgLight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="40%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#eff6ff"/>
+    </linearGradient>
+    <linearGradient id="blueIndigo" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2563eb"/>
+      <stop offset="50%" stop-color="#4f46e5"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="frameBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#6366f1"/>
+    </linearGradient>
+    <pattern id="lightGrid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e2e8f0" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <!-- Clean Bright Background -->
+  <rect width="1080" height="1350" fill="url(#bgLight)"/>
+  <rect width="1080" height="1350" fill="url(#lightGrid)" opacity="0.6"/>
+
+  <!-- Top Geometric Accents -->
+  <circle cx="950" cy="120" r="300" fill="#dbeafe" opacity="0.4"/>
+  <circle cx="100" cy="1100" r="350" fill="#e0e7ff" opacity="0.4"/>
+
+  <!-- Top Badge -->
+  <g transform="translate(190, 80)">
+    <rect width="250" height="38" rx="19" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
+    <circle cx="22" cy="19" r="6" fill="#2563eb"/>
+    <text x="38" y="24" fill="#1e40af" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="700" letter-spacing="2">GLOBAL TECH SUMMIT</text>
+  </g>
+  <text x="890" y="105" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="600" letter-spacing="2">OCTOBER 24-26, 2026</text>
+
+  <!-- Main Headline -->
+  <text x="190" y="180" fill="#0f172a" font-family="system-ui, -apple-system, sans-serif" font-size="52" font-weight="900" letter-spacing="-1">FUTURE TECH</text>
+  <text x="190" y="230" fill="url(#blueIndigo)" font-family="system-ui, -apple-system, sans-serif" font-size="44" font-weight="800" letter-spacing="-0.5">KEYNOTE SPEAKER SPOTLIGHT</text>
+  <text x="190" y="270" fill="#475569" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="500">Transforming Artificial Intelligence &amp; Autonomous Cloud Systems</text>
+
+  <!-- Photo Area Placeholder Frame: x=190, y=320, width=700, height=640, rx=24 -->
+  <g transform="translate(190, 320)">
+    <rect width="700" height="640" rx="24" fill="#f8fafc" stroke="url(#frameBorder)" stroke-width="3"/>
+    <!-- Subtle drop pattern -->
+    <rect x="3" y="3" width="694" height="634" rx="21" fill="#f1f5f9" opacity="0.7"/>
+    <!-- Placeholder hint icon -->
+    <circle cx="350" cy="280" r="56" fill="#ffffff" stroke="#3b82f6" stroke-width="2" stroke-dasharray="6 4"/>
+    <path d="M 330 295 L 345 275 L 358 290 L 372 268 L 388 295 Z" fill="#3b82f6" opacity="0.8"/>
+    <circle cx="340" cy="265" r="5" fill="#3b82f6"/>
+    <text x="350" y="375" text-anchor="middle" fill="#1e3a8a" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="700" letter-spacing="1">YOUR PHOTO APPEARS HERE</text>
+    <text x="350" y="405" text-anchor="middle" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="14">Dimensions: 700 × 640 px • Auto-cropped</text>
+  </g>
+
+  <!-- Speaker Details Card below Photo Area -->
+  <g transform="translate(190, 990)">
+    <rect width="700" height="150" rx="20" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+    <text x="40" y="55" fill="#0f172a" font-family="system-ui, -apple-system, sans-serif" font-size="30" font-weight="800">MAIN STAGE AUDITORIUM</text>
+    <text x="40" y="90" fill="#2563eb" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600">SESSION: THE NEXT DECADE OF INTELLIGENT COMPUTE</text>
+    <text x="40" y="122" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="15">HALL A • 10:30 AM PST • LIVE STREAMED GLOBALLY</text>
+
+    <!-- Barcode & Badge -->
+    <g transform="translate(560, 32)">
+      <rect width="100" height="85" rx="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+      <text x="50" y="32" text-anchor="middle" fill="#0f172a" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="800">VIP PASS</text>
+      <path d="M 15 45 H 85 M 15 52 H 70 M 15 59 H 85 M 15 66 H 60 M 15 73 H 85" stroke="#2563eb" stroke-width="2"/>
+    </g>
+  </g>
+
+  <!-- Bottom Brand Footer -->
+  <line x1="190" y1="1200" x2="890" y2="1200" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="190" y="1245" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="600">ORGANIZED BY GLOBAL TECH FOUNDATION</text>
+  <text x="890" y="1245" text-anchor="end" fill="#2563eb" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="700">WWW.TECHSUMMIT2026.IO</text>
+</svg>

@@ -1,0 +1,144 @@
+{
+  "templates": [
+    {
+      "title": "20261004 200434",
+      "slug": "20261004-200434-0dcu",
+      "description": "Ready-made 20261004 200434 poster template.",
+      "category": "Ready-Made Posters",
+      "width": 960,
+      "height": 1280,
+      "posterImage": "/uploads/poster-1791129688640-20261004_200434.png",
+      "photoArea": {
+        "x": 69,
+        "y": 328,
+        "width": 830,
+        "height": 767,
+        "borderRadius": 20,
+        "layer": "behind"
+      },
+      "sampleUserPhoto": "/templates/sample-portrait.jpg",
+      "id": "tpl-1791129688649-kvvog",
+      "createdAt": "2026-10-04T16:01:28.649Z"
+    },
+    {
+      "id": "tpl-tech-summit",
+      "title": "Future Tech Summit Keynote",
+      "slug": "tech-summit-keynote",
+      "description": "Conference headliner & keynote speaker showcase with high-tech glowing accents.",
+      "category": "Conferences & Events",
+      "width": 1080,
+      "height": 1350,
+      "posterImage": "/templates/tech-summit.svg",
+      "photoArea": {
+        "x": 190,
+        "y": 320,
+        "width": 700,
+        "height": 640,
+        "borderRadius": 24,
+        "layer": "inside"
+      },
+      "sampleUserPhoto": "/templates/sample-portrait.jpg",
+      "createdAt": "2026-10-01T10:00:00.000Z"
+    },
+    {
+      "id": "tpl-employee-award",
+      "title": "Employee of the Month Excellence Award",
+      "slug": "employee-of-the-month",
+      "description": "Luxury navy blue & gold certificate poster honoring leadership and performance.",
+      "category": "Corporate & Awards",
+      "width": 1080,
+      "height": 1350,
+      "posterImage": "/templates/employee-award.svg",
+      "photoArea": {
+        "x": 240,
+        "y": 300,
+        "width": 600,
+        "height": 600,
+        "borderRadius": 20,
+        "layer": "inside"
+      },
+      "sampleUserPhoto": "/templates/sample-portrait.jpg",
+      "createdAt": "2026-10-01T11:00:00.000Z"
+    },
+    {
+      "id": "tpl-music-festival",
+      "title": "Neon Beats Music Festival Lineup",
+      "slug": "neon-beats-music-festival",
+      "description": "Electric synthwave aesthetic with magenta neon glow for concert headliners.",
+      "category": "Concerts & Music",
+      "width": 1080,
+      "height": 1350,
+      "posterImage": "/templates/music-festival.svg",
+      "photoArea": {
+        "x": 180,
+        "y": 260,
+        "width": 720,
+        "height": 680,
+        "borderRadius": 20,
+        "layer": "inside"
+      },
+      "sampleUserPhoto": "/templates/sample-portrait.jpg",
+      "createdAt": "2026-10-01T12:00:00.000Z"
+    },
+    {
+      "id": "tpl-athlete-spotlight",
+      "title": "Championship Athlete Spotlight",
+      "slug": "champion-athlete-spotlight",
+      "description": "Dynamic sports poster with fiery orange streaks and aggressive tournament layout.",
+      "category": "Sports & Fitness",
+      "width": 1080,
+      "height": 1350,
+      "posterImage": "/templates/athlete-spotlight.svg",
+      "photoArea": {
+        "x": 200,
+        "y": 260,
+        "width": 680,
+        "height": 660,
+        "borderRadius": 16,
+        "layer": "inside"
+      },
+      "sampleUserPhoto": "/templates/sample-portrait.jpg",
+      "createdAt": "2026-10-01T13:00:00.000Z"
+    },
+    {
+      "id": "tpl-graduation-2026",
+      "title": "Class of 2026 Graduation Honors",
+      "slug": "graduation-class-2026",
+      "description": "Royal midnight blue and golden confetti celebration of academic achievement.",
+      "category": "Celebrations",
+      "width": 1080,
+      "height": 1350,
+      "posterImage": "/templates/graduation.svg",
+      "photoArea": {
+        "x": 240,
+        "y": 290,
+        "width": 600,
+        "height": 620,
+        "borderRadius": 24,
+        "layer": "inside"
+      },
+      "sampleUserPhoto": "/templates/sample-portrait.jpg",
+      "createdAt": "2026-10-01T14:00:00.000Z"
+    },
+    {
+      "id": "tpl-wanted-vintage",
+      "title": "Wild West Wanted Poster",
+      "slug": "wanted-vintage-outlaw",
+      "description": "Parchment texture and vintage slab typography for fun team awards and birthdays.",
+      "category": "Fun & Retro",
+      "width": 1080,
+      "height": 1350,
+      "posterImage": "/templates/vintage-wanted.svg",
+      "photoArea": {
+        "x": 220,
+        "y": 280,
+        "width": 640,
+        "height": 620,
+        "borderRadius": 8,
+        "layer": "inside"
+      },
+      "sampleUserPhoto": "/templates/sample-portrait.jpg",
+      "createdAt": "2026-10-01T15:00:00.000Z"
+    }
+  ]
+}
