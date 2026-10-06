@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { PhotoArea, PosterTemplate } from '@/lib/types/template';
@@ -15,11 +15,15 @@ import {
   CheckCircle2,
   Eye,
   RefreshCw,
+  Plus,
+  UploadCloud,
 } from 'lucide-react';
 
 export default function AdminDashboard() {
   const [templates, setTemplates] = useState<PosterTemplate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
@@ -27,6 +31,8 @@ export default function AdminDashboard() {
   const [editingPhotoArea, setEditingPhotoArea] = useState<PhotoArea | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [showSampleInEdit, setShowSampleInEdit] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let isCancelled = false;
@@ -70,6 +76,97 @@ export default function AdminDashboard() {
       setError(msg);
     } finally {
       setLoading(false);
+    }
+  };
+
+  /**
+   * Automatic poster creation:
+   * Admin selects a poster file -> Image is stored in Supabase Storage,
+   * database record & photo placeholder configuration are created automatically,
+   * unique poster ID/slug is generated, and poster becomes immediately live for users.
+   */
+  const handleCreatePoster = async (file: File) => {
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please select a valid image file (PNG, JPG, WebP, or SVG).');
+      return;
+    }
+
+    setCreating(true);
+    setUploadSuccess(null);
+    setError(null);
+
+    try {
+      // 1. Detect natural image dimensions in browser
+      const objectUrl = URL.createObjectURL(file);
+      const img = new window.Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('Failed to load image file.'));
+        img.src = objectUrl;
+      });
+
+      const width = img.naturalWidth || 1080;
+      const height = img.naturalHeight || 1350;
+      URL.revokeObjectURL(objectUrl);
+
+      // Clean title from filename
+      const cleanTitle = file.name
+        .replace(/\.[^/.]+$/, '')
+        .replace(/[-_]+/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+
+      // 2. Send to API for automatic storage upload and database record creation
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('title', cleanTitle);
+      formData.append('width', String(width));
+      formData.append('height', String(height));
+      formData.append('category', 'Ready-Made Posters');
+
+      const res = await fetch('/api/templates', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const newTemplate = await res.json();
+      if (!res.ok) {
+        throw new Error(newTemplate?.error || 'Failed to create poster template');
+      }
+
+      // 3. Immediately show the newly created poster in the existing poster template list
+      setTemplates((prev) => [
+        newTemplate,
+        ...prev.filter((t) => t.id !== newTemplate.id && t.slug !== newTemplate.slug),
+      ]);
+      setUploadSuccess(`"${newTemplate.title}" was created and configured automatically! It is now live for users.`);
+
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error creating poster';
+      setError(msg);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleCreatePoster(file);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleCreatePoster(file);
     }
   };
 
@@ -126,6 +223,15 @@ export default function AdminDashboard() {
 
   return (
     <div className="container mx-auto max-w-7xl px-4 sm:px-6 py-8 pb-24">
+      {/* Hidden file input for automatic poster creation */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+
       {/* Admin Header: Manage Ready-Made Posters */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 pb-6 border-b border-[#262626]">
         <div>
@@ -133,22 +239,92 @@ export default function AdminDashboard() {
             Poster Templates
           </h1>
           <p className="text-xs sm:text-sm text-[#A1A1AA] mt-1">
-            Admin panel for managing ready-made poster templates and photo placeholder area configurations.
+            Admin panel for creating ready-made poster templates and managing photo placeholder configurations.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <Button
             variant="outline"
             size="sm"
             onClick={reloadTemplates}
-            disabled={loading}
-            className="rounded-xl border-[#262626] bg-[#0D0D0D] text-xs font-medium text-[#A1A1AA] hover:text-white hover:bg-[#1A1A1A]"
+            disabled={loading || creating}
+            className="rounded-xl border-[#262626] bg-[#0D0D0D] text-xs font-medium text-[#A1A1AA] hover:text-white hover:bg-[#1A1A1A] h-10 px-3"
           >
             <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
           </Button>
+
+          <Button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={creating}
+            className="rounded-xl font-bold bg-white text-black hover:bg-neutral-200 transition-colors shadow-xs h-10 px-4 text-xs sm:text-sm flex items-center gap-2"
+          >
+            {creating ? (
+              <>
+                <div className="h-4 w-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                <span>Creating Poster...</span>
+              </>
+            ) : (
+              <>
+                <Plus className="h-4 w-4" />
+                <span>Create Poster</span>
+              </>
+            )}
+          </Button>
         </div>
+      </div>
+
+      {/* Quick Create / Add Poster Banner */}
+      <div
+        onClick={() => fileInputRef.current?.click()}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={handleDrop}
+        className={`mb-8 p-5 sm:p-6 rounded-2xl border-2 border-dashed cursor-pointer transition-colors duration-200 flex flex-col sm:flex-row items-center justify-between gap-4 ${
+          isDragging
+            ? 'border-white bg-[#1A1A1A]'
+            : 'border-[#262626] bg-[#0D0D0D] hover:border-neutral-500 hover:bg-[#121212]'
+        }`}
+      >
+        <div className="flex items-center gap-4 text-center sm:text-left">
+          <div className="h-12 w-12 rounded-xl bg-[#161616] border border-[#262626] text-white flex items-center justify-center shrink-0 shadow-xs">
+            <UploadCloud className="h-6 w-6" />
+          </div>
+          <div>
+            <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2 justify-center sm:justify-start">
+              <span>Add Ready-Made Poster</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/10 text-neutral-300 border border-white/10">
+                Automatic Setup
+              </span>
+            </h3>
+            <p className="text-xs text-[#A1A1AA] mt-0.5">
+              Select or drop a ready-made poster artwork. Storage upload, database record, and photo-placement slot are generated automatically.
+            </p>
+          </div>
+        </div>
+
+        <Button
+          type="button"
+          size="sm"
+          disabled={creating}
+          className="rounded-xl bg-white text-black hover:bg-neutral-200 font-semibold shrink-0 text-xs px-4 h-9 shadow-xs"
+        >
+          {creating ? (
+            <span className="flex items-center gap-1.5">
+              <div className="h-3.5 w-3.5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+              Creating...
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              <Plus className="h-3.5 w-3.5" />
+              Choose Image File
+            </span>
+          )}
+        </Button>
       </div>
 
       {/* Success Notification */}
@@ -197,9 +373,18 @@ export default function AdminDashboard() {
         <div className="text-center p-16 border-2 border-dashed border-[#262626] rounded-2xl bg-[#0D0D0D] max-w-lg mx-auto">
           <Layers className="h-12 w-12 text-[#71717A] mx-auto mb-3" />
           <h3 className="text-lg font-bold text-white mb-1">No templates found</h3>
-          <p className="text-xs text-[#A1A1AA]">
-            No ready-made poster templates are currently available in the database.
+          <p className="text-xs text-[#A1A1AA] mb-6">
+            Upload your first ready-made poster to get started.
           </p>
+          <Button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={creating}
+            size="sm"
+            className="bg-white text-black hover:bg-neutral-200 font-semibold rounded-xl"
+          >
+            <Plus className="mr-1.5 h-4 w-4" />
+            Create Poster
+          </Button>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
