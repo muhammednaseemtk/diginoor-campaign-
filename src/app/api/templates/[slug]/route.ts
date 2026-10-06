@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { templateDb } from '@/lib/db/templates';
-import { isRequestAdmin } from '@/lib/admin-auth';
 
 export async function GET(
   request: Request,
@@ -28,13 +27,6 @@ export async function PUT(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
-    if (!isRequestAdmin(request)) {
-      return NextResponse.json(
-        { error: 'Unauthorized: Admin authentication required to update templates.' },
-        { status: 401 }
-      );
-    }
-
     const { slug } = await params;
     const body = await request.json();
     const updated = await templateDb.update(slug, body);
@@ -57,13 +49,6 @@ export async function DELETE(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
-    if (!isRequestAdmin(request)) {
-      return NextResponse.json(
-        { error: 'Unauthorized: Admin authentication required to delete templates.' },
-        { status: 401 }
-      );
-    }
-
     const { slug } = await params;
     const deleted = await templateDb.delete(slug);
     
