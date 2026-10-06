@@ -40,25 +40,23 @@ export function Navbar() {
         <div className="flex items-center gap-2 sm:gap-3">
           <Link
             href="/"
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all ${pathname === '/'
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all ${
+              pathname === '/' || pathname.startsWith('/poster')
                 ? 'bg-[#161616] text-white font-semibold border border-[#262626]'
                 : 'text-[#A1A1AA] hover:text-white hover:bg-[#1A1A1A]'
-              }`}
+            }`}
           >
             <Layers className="h-4 w-4 shrink-0" />
-            <span>Templates</span>
+            <span>Ready-Made Posters</span>
           </Link>
 
-          <Link
-            href="/admin"
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all ${isAdmin
-                ? 'bg-white text-black font-semibold hover:bg-neutral-200 shadow-xs'
-                : 'text-[#A1A1AA] hover:text-white border border-[#262626] bg-[#0D0D0D] hover:bg-[#1A1A1A]'
-              }`}
-          >
-            <ShieldCheck className="h-4 w-4 shrink-0" />
-            <span>Admin</span>
-          </Link>
+          {/* Admin indicator visible ONLY when already within the admin route */}
+          {isAdmin && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold bg-white text-black shadow-xs">
+              <ShieldCheck className="h-4 w-4 shrink-0" />
+              <span>Admin Portal</span>
+            </div>
+          )}
         </div>
       </div>
     </header>

@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import Image from 'next/image';
 
 export function Footer() {
@@ -32,9 +31,7 @@ export function Footer() {
         <div className="flex items-center gap-4 text-xs">
           <span className="text-[#71717A]">Select Poster → Upload Photo → Download</span>
           <span className="text-[#262626]">|</span>
-          <Link href="/admin" className="text-[#A1A1AA] hover:text-white font-medium transition-colors">
-            Admin Portal
-          </Link>
+          <span className="text-[#71717A]">Instant High-Resolution Export</span>
         </div>
       </div>
     </footer>

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { templateDb } from '@/lib/db/templates';
 import { CreateTemplateInput, PhotoArea } from '@/lib/types/template';
 import { uploadPosterToStorage } from '@/lib/server-storage';
+import { isRequestAdmin } from '@/lib/admin-auth';
 import sharp from 'sharp';
 
 async function detectCutoutWindow(buffer: Buffer): Promise<PhotoArea | null> {
@@ -61,6 +62,13 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    if (!isRequestAdmin(request)) {
+      return NextResponse.json(
+        { error: 'Unauthorized: Admin authentication required to upload or create posters.' },
+        { status: 401 }
+      );
+    }
+
     const contentType = request.headers.get('content-type') || '';
     let finalImageUrl = '';
     let title = '';
