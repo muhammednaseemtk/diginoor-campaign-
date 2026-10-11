@@ -57,15 +57,24 @@ export const isSupabaseConfigured: boolean = Boolean(
 );
 
 /**
+ * Checks dynamically whether the server-side admin client is fully configured with a secret key
+ */
+export function checkIsSupabaseAdminConfigured(): boolean {
+  if (typeof window !== 'undefined') return false;
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  return Boolean(
+    url &&
+    !isPlaceholderUrl(url) &&
+    key &&
+    !isPlaceholderKey(key)
+  );
+}
+
+/**
  * Indicates whether the server-side admin client is fully configured with a secret key
  */
-export const isSupabaseAdminConfigured: boolean = Boolean(
-  typeof window === 'undefined' &&
-  serverSupabaseUrl &&
-  !isPlaceholderUrl(serverSupabaseUrl) &&
-  supabaseSecretKey &&
-  !isPlaceholderKey(supabaseSecretKey)
-);
+export const isSupabaseAdminConfigured: boolean = checkIsSupabaseAdminConfigured();
 
 /**
  * Inspects configuration and returns any missing credential types
@@ -100,7 +109,7 @@ export function getSupabaseConfigStatus(): {
 
   return {
     isConfigured: isSupabaseConfigured,
-    isAdminConfigured: isSupabaseAdminConfigured,
+    isAdminConfigured: checkIsSupabaseAdminConfigured(),
     missingValues: missing,
   };
 }
@@ -130,25 +139,44 @@ export const supabase: SupabaseClient = isSupabaseConfigured
  * This client is strictly server-side. In client/browser contexts, it falls back to the
  * public client or a restricted instance so secret keys can NEVER leak into browser bundles.
  */
-function createAdminClient(): SupabaseClient {
+let cachedAdminClient: SupabaseClient | null = null;
+let cachedAdminUrl = '';
+let cachedAdminKey = '';
+
+export function getSupabaseAdminClient(): SupabaseClient {
   if (typeof window !== 'undefined') {
     // Running in the browser: do not instantiate secret client
     return supabase;
   }
 
-  if (isSupabaseAdminConfigured) {
-    return createClient(serverSupabaseUrl, supabaseSecretKey, {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
+  if (url && !isPlaceholderUrl(url) && key && !isPlaceholderKey(key)) {
+    if (cachedAdminClient && cachedAdminUrl === url && cachedAdminKey === key) {
+      return cachedAdminClient;
+    }
+    cachedAdminUrl = url;
+    cachedAdminKey = key;
+    cachedAdminClient = createClient(url, key, {
       auth: {
         persistSession: false,
         autoRefreshToken: false,
       },
     });
+    return cachedAdminClient;
   }
 
   return supabase;
 }
 
-export const supabaseAdmin: SupabaseClient = createAdminClient();
+export const supabaseAdmin: SupabaseClient = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    const client = getSupabaseAdminClient();
+    const val = Reflect.get(client, prop);
+    return typeof val === 'function' ? val.bind(client) : val;
+  },
+});
 
 /**
  * Returns the public URL for logo assets, loading from Supabase Storage

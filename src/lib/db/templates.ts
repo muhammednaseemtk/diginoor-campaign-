@@ -7,6 +7,7 @@ import {
   supabaseAdmin,
   isSupabaseConfigured,
   isSupabaseAdminConfigured,
+  checkIsSupabaseAdminConfigured,
 } from '@/lib/supabase';
 import { deletePosterFromStorage } from '@/lib/server-storage';
 
@@ -281,66 +282,63 @@ export const templateDb = {
    * 1. Inserts into Supabase 'templates' database table using elevated server client.
    * 2. Obtains the unique database UUID.
    * 3. Retains the exact photo-area configuration associated with that record.
-   * 4. Syncs locally to maintain offline/fallback availability.
    */
   create: async (input: CreateTemplateInput): Promise<PosterTemplate> => {
-    const list = readData();
+    const isConfigured = isSupabaseAdminConfigured || checkIsSupabaseAdminConfigured();
+    // 1. If Supabase admin client is configured, save directly to database table 'templates'
+    if (isConfigured) {
+      const { data, error } = await supabaseAdmin
+        .from('templates')
+        .insert({
+          title: input.title,
+          slug: input.slug,
+          base_image_url: input.posterImage,
+          canvas_config: JSON.stringify(input.photoArea),
+          category: input.category || 'General',
+          description: input.description || '',
+          width: input.width || 1080,
+          height: input.height || 1350,
+        })
+        .select('*')
+        .single();
 
-    // 1. If Supabase admin client is configured, save directly to database
-    if (isSupabaseAdminConfigured) {
-      try {
-        const { data, error } = await supabaseAdmin
-          .from('templates')
-          .insert({
-            title: input.title,
-            slug: input.slug,
-            base_image_url: input.posterImage,
-            canvas_config: JSON.stringify(input.photoArea),
-            category: input.category || 'General',
-            description: input.description || '',
-            width: input.width || 1080,
-            height: input.height || 1350,
-          })
-          .select('*')
-          .single();
-
-        if (!error && data) {
-          const created: PosterTemplate = {
-            id: String(data.id),
-            title: data.title,
-            slug: data.slug,
-            description: data.description || '',
-            category: data.category || 'General',
-            width: Number(data.width) || 1080,
-            height: Number(data.height) || 1350,
-            posterImage: data.base_image_url,
-            photoArea: parseCanvasConfig(data.canvas_config),
-            sampleUserPhoto: '/templates/sample-portrait.jpg',
-            createdAt: data.created_at || new Date().toISOString(),
-          };
-
-          // Cache locally
-          list.unshift(created);
-          writeData(list);
-          return created;
-        } else if (error) {
-          console.warn('Supabase database insert returned error, falling back to local:', error.message);
-        }
-      } catch (err) {
-        console.warn('Error inserting template into Supabase DB, falling back to local:', err);
+      if (error) {
+        throw new Error(`Failed to save template to database: ${error.message}`);
       }
+
+      if (!data) {
+        throw new Error('Database insert completed but returned no record.');
+      }
+
+      const created: PosterTemplate = {
+        id: String(data.id),
+        title: data.title,
+        slug: data.slug,
+        description: data.description || '',
+        category: data.category || 'General',
+        width: Number(data.width) || 1080,
+        height: Number(data.height) || 1350,
+        posterImage: data.base_image_url,
+        photoArea: parseCanvasConfig(data.canvas_config),
+        sampleUserPhoto: '/templates/sample-portrait.jpg',
+        createdAt: data.created_at || new Date().toISOString(),
+      };
+
+      // Safely sync local cache if filesystem permits, but never fail on read-only environments
+      try {
+        const list = readData();
+        list.unshift(created);
+        writeData(list);
+      } catch {
+        // Read-only filesystem in serverless hosting - safely ignore
+      }
+
+      return created;
     }
 
-    // Fallback local storage
-    const fallbackTemplate: PosterTemplate = {
-      ...input,
-      id: crypto.randomUUID(),
-      createdAt: new Date().toISOString(),
-    };
-
-    list.unshift(fallbackTemplate);
-    writeData(list);
-    return fallbackTemplate;
+    throw new Error(
+      'Supabase database is not configured. Please ensure SUPABASE_URL and SUPABASE_SECRET_KEY are set in your environment variables.'
+    );
   },
 
   /**
