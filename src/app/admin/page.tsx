@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { PhotoArea, PosterTemplate } from '@/lib/types/template';
@@ -8,15 +8,13 @@ import { InteractiveAdminCanvas } from '@/components/admin/InteractiveAdminCanva
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
-  PlusCircle,
   ExternalLink,
   Trash2,
   Layers,
   Sliders,
-  UploadCloud,
   CheckCircle2,
-  Sparkles,
   Eye,
+  RefreshCw,
 } from 'lucide-react';
 
 export default function AdminDashboard() {
@@ -24,14 +22,11 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [editingTemplate, setEditingTemplate] = useState<PosterTemplate | null>(null);
   const [editingPhotoArea, setEditingPhotoArea] = useState<PhotoArea | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [showSampleInEdit, setShowSampleInEdit] = useState(false);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let isCancelled = false;
@@ -75,79 +70,6 @@ export default function AdminDashboard() {
       setError(msg);
     } finally {
       setLoading(false);
-    }
-  };
-
-  /**
-   * Automatic poster upload:
-   * Admin selects a poster file -> Image is stored in Supabase Storage,
-   * database record & photo placeholder configuration are created automatically,
-   * and the poster becomes immediately available to users.
-   */
-  const handleAutoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      alert('Please select an image file (PNG, JPG, WebP, or SVG).');
-      return;
-    }
-
-    setUploading(true);
-    setUploadSuccess(null);
-    setError(null);
-
-    try {
-      // 1. Detect image dimensions in browser
-      const objectUrl = URL.createObjectURL(file);
-      const img = document.createElement('img');
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error('Failed to load image file.'));
-        img.src = objectUrl;
-      });
-
-      const width = img.naturalWidth || 1080;
-      const height = img.naturalHeight || 1350;
-      URL.revokeObjectURL(objectUrl);
-
-      // Clean title from filename
-      const cleanTitle = file.name
-        .replace(/\.[^/.]+$/, '')
-        .replace(/[-_]+/g, ' ')
-        .replace(/\b\w/g, (c) => c.toUpperCase());
-
-      // 2. Send to API for automatic storage upload and database record creation
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('title', cleanTitle);
-      formData.append('width', String(width));
-      formData.append('height', String(height));
-      formData.append('category', 'Ready-Made Posters');
-
-      const res = await fetch('/api/templates', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const newTemplate = await res.json();
-      if (!res.ok) {
-        throw new Error(newTemplate?.error || 'Failed to upload and create poster');
-      }
-
-      // 3. Immediately make it available in the poster list
-      setTemplates((prev) => [newTemplate, ...prev]);
-      setUploadSuccess(`"${newTemplate.title}" was uploaded to storage and automatically configured! It is now live for users.`);
-
-      // Reset file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error uploading poster';
-      setError(msg);
-    } finally {
-      setUploading(false);
     }
   };
 
@@ -204,51 +126,28 @@ export default function AdminDashboard() {
 
   return (
     <div className="container mx-auto max-w-7xl px-4 sm:px-6 py-8 pb-24">
-      {/* Hidden file input for automatic 1-click upload */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        onChange={handleAutoUpload}
-        className="hidden"
-      />
-
-      {/* Admin Header: Only Add & Manage Ready-Made Posters */}
+      {/* Admin Header: Manage Ready-Made Posters */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 pb-6 border-b border-[#262626]">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
             Poster Templates
           </h1>
           <p className="text-xs sm:text-sm text-[#A1A1AA] mt-1">
-            Admin panel for uploading ready-made poster templates. Uploading automatically stores the image and configures the user-photo placeholder area.
+            Admin panel for managing ready-made poster templates and photo placeholder area configurations.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2">
           <Button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="rounded-xl font-semibold shadow-xs bg-white text-black hover:bg-neutral-200 transition-colors w-full sm:w-auto"
+            variant="outline"
+            size="sm"
+            onClick={reloadTemplates}
+            disabled={loading}
+            className="rounded-xl border-[#262626] bg-[#0D0D0D] text-xs font-medium text-[#A1A1AA] hover:text-white hover:bg-[#1A1A1A]"
           >
-            {uploading ? (
-              <>
-                <div className="animate-spin mr-2 h-4 w-4 border-2 border-black border-t-transparent rounded-full" />
-                Uploading &amp; Configuring...
-              </>
-            ) : (
-              <>
-                <UploadCloud className="mr-2 h-4 w-4" />
-                Upload Poster (Automatic)
-              </>
-            )}
+            <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
           </Button>
-
-          <Link href="/admin/create">
-            <Button variant="outline" className="rounded-xl font-semibold border-[#262626] bg-[#0D0D0D] text-white hover:bg-[#1A1A1A] w-full sm:w-auto">
-              <PlusCircle className="mr-2 h-4 w-4 text-white" />
-              Advanced Setup
-            </Button>
-          </Link>
         </div>
       </div>
 
@@ -286,34 +185,6 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Automatic Fast-Drop Banner */}
-      <div
-        onClick={() => fileInputRef.current?.click()}
-        className="mb-8 p-6 rounded-2xl border-2 border-dashed border-[#262626] bg-[#0D0D0D] hover:bg-[#141414] hover:border-neutral-500 cursor-pointer transition-colors flex flex-col sm:flex-row items-center justify-between gap-4"
-      >
-        <div className="flex items-center gap-4 text-center sm:text-left">
-          <div className="h-12 w-12 rounded-xl bg-[#161616] border border-[#262626] text-white flex items-center justify-center shrink-0 shadow-xs">
-            <Sparkles className="h-6 w-6" />
-          </div>
-          <div>
-            <h3 className="text-sm sm:text-base font-bold text-white">
-              One-Click Automatic Poster Upload
-            </h3>
-            <p className="text-xs text-[#A1A1AA] mt-0.5">
-              Click here to upload a poster image. The system automatically stores it in Supabase Storage, calculates the photo placement area, and makes it available to users instantly.
-            </p>
-          </div>
-        </div>
-
-        <Button
-          size="sm"
-          disabled={uploading}
-          className="rounded-xl bg-white text-black hover:bg-neutral-200 font-semibold shrink-0 text-xs px-4"
-        >
-          {uploading ? 'Processing...' : 'Choose Poster File'}
-        </Button>
-      </div>
-
       {/* Loading State */}
       {loading ? (
         <div className="grid place-items-center h-64">
@@ -325,17 +196,10 @@ export default function AdminDashboard() {
       ) : templates.length === 0 ? (
         <div className="text-center p-16 border-2 border-dashed border-[#262626] rounded-2xl bg-[#0D0D0D] max-w-lg mx-auto">
           <Layers className="h-12 w-12 text-[#71717A] mx-auto mb-3" />
-          <h3 className="text-lg font-bold text-white mb-1">No templates yet</h3>
-          <p className="text-xs text-[#A1A1AA] mb-6">
-            Upload your first ready-made poster to get started.
+          <h3 className="text-lg font-bold text-white mb-1">No templates found</h3>
+          <p className="text-xs text-[#A1A1AA]">
+            No ready-made poster templates are currently available in the database.
           </p>
-          <Button
-            onClick={() => fileInputRef.current?.click()}
-            size="sm"
-            className="bg-white text-black hover:bg-neutral-200 font-semibold rounded-xl"
-          >
-            Upload Poster
-          </Button>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
