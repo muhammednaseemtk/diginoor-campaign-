@@ -16,126 +16,63 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 export const DEFAULT_TEMPLATES: PosterTemplate[] = [
   {
-    id: 'tpl-tech-summit',
-    title: 'Future Tech Summit Keynote',
-    slug: 'tech-summit-keynote',
-    description: 'Conference headliner & keynote speaker showcase with high-tech glowing accents.',
-    category: 'Conferences & Events',
-    width: 1080,
-    height: 1350,
-    posterImage: '/templates/tech-summit.svg',
+    id: 'tpl-1791129688649-kvvog',
+    title: '20261004 200434',
+    slug: '20261004-200434-0dcu',
+    description: 'Ready-made 20261004 200434 poster template.',
+    category: 'Ready-Made Posters',
+    width: 960,
+    height: 1280,
+    posterImage: '/uploads/poster-1791129688640-20261004_200434.png',
     photoArea: {
-      x: 190,
-      y: 320,
-      width: 700,
-      height: 640,
-      borderRadius: 24,
-      layer: 'inside',
-    },
-    sampleUserPhoto: '/templates/sample-portrait.jpg',
-    createdAt: '2026-10-01T10:00:00.000Z',
-  },
-  {
-    id: 'tpl-employee-award',
-    title: 'Employee of the Month Excellence Award',
-    slug: 'employee-of-the-month',
-    description: 'Luxury navy blue & gold certificate poster honoring leadership and performance.',
-    category: 'Corporate & Awards',
-    width: 1080,
-    height: 1350,
-    posterImage: '/templates/employee-award.svg',
-    photoArea: {
-      x: 240,
-      y: 300,
-      width: 600,
-      height: 600,
+      x: 69,
+      y: 328,
+      width: 830,
+      height: 767,
       borderRadius: 20,
-      layer: 'inside',
+      layer: 'behind',
     },
     sampleUserPhoto: '/templates/sample-portrait.jpg',
-    createdAt: '2026-10-01T11:00:00.000Z',
-  },
-  {
-    id: 'tpl-music-festival',
-    title: 'Neon Beats Music Festival Lineup',
-    slug: 'neon-beats-music-festival',
-    description: 'Electric synthwave aesthetic with magenta neon glow for concert headliners.',
-    category: 'Concerts & Music',
-    width: 1080,
-    height: 1350,
-    posterImage: '/templates/music-festival.svg',
-    photoArea: {
-      x: 180,
-      y: 260,
-      width: 720,
-      height: 680,
-      borderRadius: 20,
-      layer: 'inside',
-    },
-    sampleUserPhoto: '/templates/sample-portrait.jpg',
-    createdAt: '2026-10-01T12:00:00.000Z',
-  },
-  {
-    id: 'tpl-athlete-spotlight',
-    title: 'Championship Athlete Spotlight',
-    slug: 'champion-athlete-spotlight',
-    description: 'Dynamic sports poster with fiery orange streaks and aggressive tournament layout.',
-    category: 'Sports & Fitness',
-    width: 1080,
-    height: 1350,
-    posterImage: '/templates/athlete-spotlight.svg',
-    photoArea: {
-      x: 200,
-      y: 260,
-      width: 680,
-      height: 660,
-      borderRadius: 16,
-      layer: 'inside',
-    },
-    sampleUserPhoto: '/templates/sample-portrait.jpg',
-    createdAt: '2026-10-01T13:00:00.000Z',
-  },
-  {
-    id: 'tpl-graduation-2026',
-    title: 'Class of 2026 Graduation Honors',
-    slug: 'graduation-class-2026',
-    description: 'Royal midnight blue and golden confetti celebration of academic achievement.',
-    category: 'Celebrations',
-    width: 1080,
-    height: 1350,
-    posterImage: '/templates/graduation.svg',
-    photoArea: {
-      x: 240,
-      y: 290,
-      width: 600,
-      height: 620,
-      borderRadius: 24,
-      layer: 'inside',
-    },
-    sampleUserPhoto: '/templates/sample-portrait.jpg',
-    createdAt: '2026-10-01T14:00:00.000Z',
-  },
-  {
-    id: 'tpl-wanted-vintage',
-    title: 'Wild West Wanted Poster',
-    slug: 'wanted-vintage-outlaw',
-    description: 'Parchment texture and vintage slab typography for fun team awards and birthdays.',
-    category: 'Fun & Retro',
-    width: 1080,
-    height: 1350,
-    posterImage: '/templates/vintage-wanted.svg',
-    photoArea: {
-      x: 220,
-      y: 280,
-      width: 640,
-      height: 620,
-      borderRadius: 8,
-      layer: 'inside',
-    },
-    sampleUserPhoto: '/templates/sample-portrait.jpg',
-    createdAt: '2026-10-01T15:00:00.000Z',
+    createdAt: '2026-10-04T16:01:28.649Z',
   },
 ];
+
+export const UNWANTED_DEFAULT_SLUGS = [
+  'tech-summit-keynote',
+  'employee-of-the-month',
+  'neon-beats-music-festival',
+  'champion-athlete-spotlight',
+  'graduation-class-2026',
+  'wanted-vintage-outlaw',
+];
+
+export const UNWANTED_DEFAULT_IDS = [
+  'tpl-tech-summit',
+  'tpl-employee-award',
+  'tpl-music-festival',
+  'tpl-athlete-spotlight',
+  'tpl-graduation-2026',
+  'tpl-wanted-vintage',
+];
+
+export function isUnwantedDefaultPoster(template?: { id?: string; slug?: string; posterImage?: string } | null): boolean {
+  if (!template) return false;
+  if (template.slug && UNWANTED_DEFAULT_SLUGS.includes(template.slug)) return true;
+  if (template.id && UNWANTED_DEFAULT_IDS.includes(template.id)) return true;
+  if (template.posterImage && (
+    template.posterImage.includes('/templates/tech-summit.svg') ||
+    template.posterImage.includes('/templates/employee-award.svg') ||
+    template.posterImage.includes('/templates/music-festival.svg') ||
+    template.posterImage.includes('/templates/athlete-spotlight.svg') ||
+    template.posterImage.includes('/templates/graduation.svg') ||
+    template.posterImage.includes('/templates/vintage-wanted.svg')
+  )) {
+    return true;
+  }
+  return false;
+}
+
+let supabaseCleanupRan = false;
 
 function parseCanvasConfig(raw: unknown): PhotoArea {
   if (typeof raw === 'string') {
@@ -159,14 +96,21 @@ function readData(): PosterTemplate[] {
     }
     const fileContent = fs.readFileSync(DATA_FILE_PATH, 'utf-8');
     const parsed = JSON.parse(fileContent);
-    const list: PosterTemplate[] = Array.isArray(parsed.templates) ? parsed.templates : [];
+    const rawList: PosterTemplate[] = Array.isArray(parsed.templates) ? parsed.templates : [];
 
-    if (list.length === 0) {
+    // Filter out any unwanted default/demo templates
+    const cleanList = rawList.filter((t) => !isUnwantedDefaultPoster(t));
+
+    if (cleanList.length !== rawList.length) {
+      writeData(cleanList);
+    }
+
+    if (cleanList.length === 0) {
       writeData(DEFAULT_TEMPLATES);
       return DEFAULT_TEMPLATES;
     }
 
-    return list;
+    return cleanList;
   } catch (err) {
     console.error('Error reading template data:', err);
     return DEFAULT_TEMPLATES;
@@ -175,7 +119,8 @@ function readData(): PosterTemplate[] {
 
 function writeData(templates: PosterTemplate[]) {
   try {
-    fs.writeFileSync(DATA_FILE_PATH, JSON.stringify({ templates }, null, 2), 'utf-8');
+    const cleanTemplates = templates.filter((t) => !isUnwantedDefaultPoster(t));
+    fs.writeFileSync(DATA_FILE_PATH, JSON.stringify({ templates: cleanTemplates }, null, 2), 'utf-8');
   } catch (err) {
     console.error('Error writing template data:', err);
   }
@@ -191,28 +136,42 @@ export const templateDb = {
     if (isConfigured) {
       try {
         const client = checkIsSupabaseAdminConfigured() ? supabaseAdmin : supabase;
+
+        // Perform one-time cleanup on Supabase table if admin client is available
+        if (checkIsSupabaseAdminConfigured() && !supabaseCleanupRan) {
+          supabaseCleanupRan = true;
+          try {
+            await supabaseAdmin.from('templates').delete().in('slug', UNWANTED_DEFAULT_SLUGS);
+            await supabaseAdmin.from('templates').delete().in('id', UNWANTED_DEFAULT_IDS);
+          } catch (cleanErr) {
+            console.warn('Notice: Default poster cleanup check in Supabase:', cleanErr);
+          }
+        }
+
         const { data, error } = await client
           .from('templates')
           .select('*')
           .order('created_at', { ascending: false });
 
         if (!error && Array.isArray(data)) {
-          const remoteList: PosterTemplate[] = data.map((row) => ({
-            id: String(row.id),
-            title: row.title,
-            slug: row.slug,
-            description: row.description || '',
-            category: row.category || 'General',
-            width: Number(row.width) || 1080,
-            height: Number(row.height) || 1350,
-            posterImage: row.base_image_url,
-            photoArea: parseCanvasConfig(row.canvas_config),
-            sampleUserPhoto: '/templates/sample-portrait.jpg',
-            createdAt: row.created_at || new Date().toISOString(),
-          }));
+          const remoteList: PosterTemplate[] = data
+            .map((row) => ({
+              id: String(row.id),
+              title: row.title,
+              slug: row.slug,
+              description: row.description || '',
+              category: row.category || 'General',
+              width: Number(row.width) || 1080,
+              height: Number(row.height) || 1350,
+              posterImage: row.base_image_url,
+              photoArea: parseCanvasConfig(row.canvas_config),
+              sampleUserPhoto: '/templates/sample-portrait.jpg',
+              createdAt: row.created_at || new Date().toISOString(),
+            }))
+            .filter((t) => !isUnwantedDefaultPoster(t));
 
-          // Merge local/default templates so existing templates never 404
-          const localList = readData();
+          // Merge local/cached templates (only non-default templates)
+          const localList = readData().filter((t) => !isUnwantedDefaultPoster(t));
           const merged = [...remoteList];
           for (const localTpl of localList) {
             if (!merged.some((m) => m.slug === localTpl.slug || m.id === localTpl.id)) {
@@ -226,7 +185,7 @@ export const templateDb = {
       }
     }
 
-    return readData();
+    return readData().filter((t) => !isUnwantedDefaultPoster(t));
   },
 
   /**
@@ -234,6 +193,10 @@ export const templateDb = {
    * Handles UUID check carefully so PostgreSQL does not throw a 22P02 syntax error.
    */
   getBySlug: async (slugOrId: string): Promise<PosterTemplate | null> => {
+    if (UNWANTED_DEFAULT_SLUGS.includes(slugOrId) || UNWANTED_DEFAULT_IDS.includes(slugOrId)) {
+      return null;
+    }
+
     const isConfigured = checkIsSupabaseAdminConfigured() || checkIsSupabaseConfigured();
     if (isConfigured) {
       try {
@@ -250,7 +213,7 @@ export const templateDb = {
         const { data, error } = await query.maybeSingle();
 
         if (!error && data) {
-          return {
+          const template: PosterTemplate = {
             id: String(data.id),
             title: data.title,
             slug: data.slug,
@@ -263,13 +226,19 @@ export const templateDb = {
             sampleUserPhoto: '/templates/sample-portrait.jpg',
             createdAt: data.created_at || new Date().toISOString(),
           };
+
+          if (isUnwantedDefaultPoster(template)) {
+            return null;
+          }
+
+          return template;
         }
       } catch (err) {
         console.warn('Supabase query error in getBySlug:', err);
       }
     }
 
-    const list = readData();
+    const list = readData().filter((t) => !isUnwantedDefaultPoster(t));
     return list.find((t) => t.slug === slugOrId || t.id === slugOrId) || null;
   },
 
