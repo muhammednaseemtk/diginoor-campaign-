@@ -3,6 +3,7 @@ import path from 'path';
 import {
   supabaseAdmin,
   checkIsSupabaseAdminConfigured,
+  getSupabaseAdminConfigStatus,
   STORAGE_BUCKET,
 } from '@/lib/supabase';
 
@@ -68,8 +69,18 @@ export async function uploadPosterToStorage(
     throw new Error('Cannot upload an empty image buffer.');
   }
 
-  const isConfigured = checkIsSupabaseAdminConfigured();
-  if (!isConfigured) {
+  const adminStatus = getSupabaseAdminConfigStatus();
+  if (!adminStatus.isConfigured) {
+    if (adminStatus.missingUrl && !adminStatus.missingKey) {
+      throw new Error(
+        'Supabase Storage is not configured on the server: Supabase URL is missing or unresolved at runtime. Please ensure NEXT_PUBLIC_SUPABASE_URL or SUPABASE_URL is set in your environment variables.'
+      );
+    }
+    if (adminStatus.missingKey && !adminStatus.missingUrl) {
+      throw new Error(
+        'Supabase Storage is not configured on the server: Supabase Secret Key is missing or unresolved. Please ensure SUPABASE_SECRET_KEY is set in your environment variables.'
+      );
+    }
     throw new Error(
       'Supabase Storage is not configured on the server. Please ensure NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY are set in your environment variables.'
     );

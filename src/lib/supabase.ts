@@ -57,16 +57,43 @@ export function getCleanEnvVar(names: string[]): string {
 /**
  * Resolves the Supabase Project URL from any configured environment alias.
  * Ensures trailing slashes and quotes are cleanly stripped.
+ *
+ * CRITICAL VERCEL COMPILE/RUNTIME FIX:
+ * Next.js (Turbopack/Webpack) inlines NEXT_PUBLIC_* variables into JavaScript bundles
+ * at build time ONLY when referenced as direct static member expressions
+ * (e.g. process.env.NEXT_PUBLIC_SUPABASE_URL).
+ * Dynamic property bracket accesses (e.g. process.env[name]) are NOT inlined by the compiler.
+ * In Vercel Serverless Function runtime (AWS Lambda), NEXT_PUBLIC_* variables are NOT
+ * injected into Lambda process.env. Therefore, direct static member expressions are
+ * required so Turbopack embeds the build-time value directly into server route bundles.
  */
 export function getCleanSupabaseUrl(): string {
-  const raw = getCleanEnvVar([
-    'NEXT_PUBLIC_SUPABASE_URL',
-    'SUPABASE_URL',
-    'SUPABASE_PROJECT_URL',
-    'NEXT_PUBLIC_SUPABASE_PROJECT_URL',
-    'SUPABASE_API_URL',
-    'NEXT_PUBLIC_SUPABASE_API_URL',
-  ]);
+  // 1. Direct static member accesses for build-time compiler inlining
+  const staticCandidate =
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.SUPABASE_URL ||
+    process.env.SUPABASE_PROJECT_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_PROJECT_URL ||
+    process.env.SUPABASE_API_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_API_URL;
+
+  let raw = '';
+  if (staticCandidate && typeof staticCandidate === 'string' && staticCandidate.trim()) {
+    raw = cleanEnvValue(staticCandidate);
+  }
+
+  // 2. Dynamic runtime lookup fallback across all process.env keys and aliases
+  if (!raw) {
+    raw = getCleanEnvVar([
+      'NEXT_PUBLIC_SUPABASE_URL',
+      'SUPABASE_URL',
+      'SUPABASE_PROJECT_URL',
+      'NEXT_PUBLIC_SUPABASE_PROJECT_URL',
+      'SUPABASE_API_URL',
+      'NEXT_PUBLIC_SUPABASE_API_URL',
+    ]);
+  }
+
   if (!raw) return '';
   return raw.replace(/\/+$/, '');
 }
@@ -77,6 +104,22 @@ export function getCleanSupabaseUrl(): string {
  */
 export function getCleanSupabaseSecretKey(): string {
   if (typeof window !== 'undefined') return '';
+
+  // 1. Direct static member accesses
+  const staticCandidate =
+    process.env.SUPABASE_SECRET_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    process.env.SUPABASE_SECRET ||
+    process.env.SUPABASE_KEY ||
+    process.env.SERVICE_ROLE_KEY ||
+    process.env.SECRET_KEY;
+
+  if (staticCandidate && typeof staticCandidate === 'string' && staticCandidate.trim()) {
+    return cleanEnvValue(staticCandidate);
+  }
+
+  // 2. Dynamic runtime lookup fallback
   return getCleanEnvVar([
     'SUPABASE_SECRET_KEY',
     'SUPABASE_SERVICE_ROLE_KEY',
@@ -92,6 +135,19 @@ export function getCleanSupabaseSecretKey(): string {
  * Resolves the public Supabase Publishable / Anon Key.
  */
 export function getCleanSupabasePublishableKey(): string {
+  // 1. Direct static member accesses for build-time compiler inlining
+  const staticCandidate =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_KEY ||
+    process.env.SUPABASE_PUBLISHABLE_KEY ||
+    process.env.SUPABASE_ANON_KEY;
+
+  if (staticCandidate && typeof staticCandidate === 'string' && staticCandidate.trim()) {
+    return cleanEnvValue(staticCandidate);
+  }
+
+  // 2. Dynamic runtime lookup fallback
   return getCleanEnvVar([
     'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
     'NEXT_PUBLIC_SUPABASE_ANON_KEY',
@@ -168,6 +224,41 @@ export function checkIsSupabaseAdminConfigured(): boolean {
     key &&
     !isPlaceholderKey(key)
   );
+}
+
+/**
+ * Returns detailed diagnostic information regarding server admin configuration.
+ * Pinpoints specifically whether the URL, the secret key, or both are missing or placeholder.
+ */
+export function getSupabaseAdminConfigStatus(): {
+  isConfigured: boolean;
+  missingUrl: boolean;
+  missingKey: boolean;
+  urlConfigured: boolean;
+  keyConfigured: boolean;
+} {
+  if (typeof window !== 'undefined') {
+    return {
+      isConfigured: false,
+      missingUrl: true,
+      missingKey: true,
+      urlConfigured: false,
+      keyConfigured: false,
+    };
+  }
+
+  const url = getCleanSupabaseUrl();
+  const key = getCleanSupabaseSecretKey();
+  const hasValidUrl = Boolean(url && !isPlaceholderUrl(url));
+  const hasValidKey = Boolean(key && !isPlaceholderKey(key));
+
+  return {
+    isConfigured: hasValidUrl && hasValidKey,
+    missingUrl: !hasValidUrl,
+    missingKey: !hasValidKey,
+    urlConfigured: hasValidUrl,
+    keyConfigured: hasValidKey,
+  };
 }
 
 /**

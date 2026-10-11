@@ -309,7 +309,7 @@ export const templateDb = {
     }
 
     throw new Error(
-      'Supabase database is not configured. Please ensure SUPABASE_URL and SUPABASE_SECRET_KEY are set in your environment variables.'
+      'Supabase database is not configured. Please ensure NEXT_PUBLIC_SUPABASE_URL (or SUPABASE_URL) and SUPABASE_SECRET_KEY are set in your environment variables.'
     );
   },
 
