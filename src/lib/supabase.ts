@@ -1,36 +1,123 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Dedicated storage bucket for Diginoor posters
-export const STORAGE_BUCKET = 'posters';
+/**
+ * Strips surrounding single/double quotes, escaped quotes, and trailing whitespace/newlines.
+ */
+export function cleanEnvValue(val?: string | null): string {
+  if (!val || typeof val !== 'string') return '';
+  let str = val.trim();
+  // Strip outer quotes ("..." or '...')
+  if (
+    (str.startsWith('"') && str.endsWith('"')) ||
+    (str.startsWith("'") && str.endsWith("'"))
+  ) {
+    str = str.slice(1, -1).trim();
+  }
+  // Strip escaped quotes (\"...\")
+  if (str.startsWith('\\"') && str.endsWith('\\"')) {
+    str = str.slice(2, -2).trim();
+  }
+  return str;
+}
 
-// Read client credentials (safe for browser)
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabasePublishableKey =
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  '';
+/**
+ * Robust environment variable resolver:
+ * 1. Checks exact property matches
+ * 2. Checks case-insensitive and trimmed names in process.env
+ */
+export function getCleanEnvVar(names: string[]): string {
+  if (typeof process === 'undefined' || !process.env) return '';
 
-// Read server-only credentials (elevated admin operations)
-const serverSupabaseUrl =
-  process.env.SUPABASE_URL ||
-  process.env.NEXT_PUBLIC_SUPABASE_URL ||
-  '';
-const supabaseSecretKey =
-  (typeof window === 'undefined'
-    ? process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
-    : '') || '';
+  // 1. Direct property access
+  for (const name of names) {
+    const val = process.env[name];
+    if (val && typeof val === 'string' && val.trim()) {
+      const cleaned = cleanEnvValue(val);
+      if (cleaned) return cleaned;
+    }
+  }
+
+  // 2. Case-insensitive and trimmed match across process.env keys
+  const keys = Object.keys(process.env);
+  for (const name of names) {
+    const target = name.trim().toLowerCase();
+    const matchedKey = keys.find((k) => k.trim().toLowerCase() === target);
+    if (matchedKey) {
+      const val = process.env[matchedKey];
+      if (val && typeof val === 'string' && val.trim()) {
+        const cleaned = cleanEnvValue(val);
+        if (cleaned) return cleaned;
+      }
+    }
+  }
+
+  return '';
+}
+
+/**
+ * Resolves the Supabase Project URL from any configured environment alias.
+ * Ensures trailing slashes and quotes are cleanly stripped.
+ */
+export function getCleanSupabaseUrl(): string {
+  const raw = getCleanEnvVar([
+    'NEXT_PUBLIC_SUPABASE_URL',
+    'SUPABASE_URL',
+    'SUPABASE_PROJECT_URL',
+    'NEXT_PUBLIC_SUPABASE_PROJECT_URL',
+    'SUPABASE_API_URL',
+    'NEXT_PUBLIC_SUPABASE_API_URL',
+  ]);
+  if (!raw) return '';
+  return raw.replace(/\/+$/, '');
+}
+
+/**
+ * Resolves the server-only Supabase Secret Key (service role) from environment aliases.
+ * NEVER exposed in browser/client contexts.
+ */
+export function getCleanSupabaseSecretKey(): string {
+  if (typeof window !== 'undefined') return '';
+  return getCleanEnvVar([
+    'SUPABASE_SECRET_KEY',
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'SUPABASE_SERVICE_KEY',
+    'SUPABASE_SECRET',
+    'SUPABASE_KEY',
+    'SERVICE_ROLE_KEY',
+    'SECRET_KEY',
+  ]);
+}
+
+/**
+ * Resolves the public Supabase Publishable / Anon Key.
+ */
+export function getCleanSupabasePublishableKey(): string {
+  return getCleanEnvVar([
+    'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+    'NEXT_PUBLIC_SUPABASE_KEY',
+    'SUPABASE_PUBLISHABLE_KEY',
+    'SUPABASE_ANON_KEY',
+  ]);
+}
+
+// Dedicated storage bucket for Diginoor posters (defaults to 'posters')
+export const STORAGE_BUCKET =
+  getCleanEnvVar(['SUPABASE_STORAGE_BUCKET', 'NEXT_PUBLIC_STORAGE_BUCKET']) || 'posters';
 
 /**
  * Checks if a given Supabase URL is placeholder or unconfigured
  */
 export function isPlaceholderUrl(url?: string): boolean {
   if (!url) return true;
-  const trimmed = url.trim().toLowerCase();
+  const cleaned = cleanEnvValue(url).toLowerCase();
   return (
-    !trimmed.startsWith('http') ||
-    trimmed.includes('your-project-id') ||
-    trimmed.includes('your-supabase-url') ||
-    trimmed.includes('placeholder.supabase.co')
+    (!cleaned.startsWith('http://') && !cleaned.startsWith('https://')) ||
+    cleaned.includes('your-project-id') ||
+    cleaned.includes('your-supabase-url') ||
+    cleaned.includes('placeholder.supabase.co') ||
+    cleaned === 'http://' ||
+    cleaned === 'https://'
   );
 }
 
@@ -39,30 +126,42 @@ export function isPlaceholderUrl(url?: string): boolean {
  */
 export function isPlaceholderKey(key?: string): boolean {
   if (!key) return true;
-  const trimmed = key.trim().toLowerCase();
+  const cleaned = cleanEnvValue(key).toLowerCase();
   return (
-    trimmed.includes('your-') ||
-    trimmed.includes('placeholder')
+    cleaned.includes('your-') ||
+    cleaned.includes('placeholder') ||
+    cleaned === 'undefined' ||
+    cleaned === 'null' ||
+    cleaned.length < 10
   );
 }
 
 /**
- * Indicates whether the public frontend Supabase client is fully configured
+ * Dynamically checks whether the public Supabase client or server client is configured.
  */
-export const isSupabaseConfigured: boolean = Boolean(
-  supabaseUrl &&
-  !isPlaceholderUrl(supabaseUrl) &&
-  supabasePublishableKey &&
-  !isPlaceholderKey(supabasePublishableKey)
-);
+export function checkIsSupabaseConfigured(): boolean {
+  const url = getCleanSupabaseUrl();
+  const pubKey = getCleanSupabasePublishableKey();
+  if (url && !isPlaceholderUrl(url) && pubKey && !isPlaceholderKey(pubKey)) {
+    return true;
+  }
+  // On the server, if secret key is present, database operations are also fully available
+  if (typeof window === 'undefined') {
+    const secKey = getCleanSupabaseSecretKey();
+    if (url && !isPlaceholderUrl(url) && secKey && !isPlaceholderKey(secKey)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /**
  * Checks dynamically whether the server-side admin client is fully configured with a secret key
  */
 export function checkIsSupabaseAdminConfigured(): boolean {
   if (typeof window !== 'undefined') return false;
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  const url = getCleanSupabaseUrl();
+  const key = getCleanSupabaseSecretKey();
   return Boolean(
     url &&
     !isPlaceholderUrl(url) &&
@@ -72,8 +171,9 @@ export function checkIsSupabaseAdminConfigured(): boolean {
 }
 
 /**
- * Indicates whether the server-side admin client is fully configured with a secret key
+ * Static compatibility exports
  */
+export const isSupabaseConfigured: boolean = checkIsSupabaseConfigured();
 export const isSupabaseAdminConfigured: boolean = checkIsSupabaseAdminConfigured();
 
 /**
@@ -86,29 +186,23 @@ export function getSupabaseConfigStatus(): {
 } {
   const missing: string[] = [];
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
-  if (isPlaceholderUrl(url)) {
+  const url = getCleanSupabaseUrl();
+  if (!url || isPlaceholderUrl(url)) {
     missing.push('NEXT_PUBLIC_SUPABASE_URL / SUPABASE_URL');
   }
 
-  const pubKey =
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    '';
-  if (isPlaceholderKey(pubKey)) {
+  const pubKey = getCleanSupabasePublishableKey();
+  if (!pubKey || isPlaceholderKey(pubKey)) {
     missing.push('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY');
   }
 
-  const secKey =
-    process.env.SUPABASE_SECRET_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    '';
-  if (isPlaceholderKey(secKey)) {
+  const secKey = getCleanSupabaseSecretKey();
+  if (!secKey || isPlaceholderKey(secKey)) {
     missing.push('SUPABASE_SECRET_KEY');
   }
 
   return {
-    isConfigured: isSupabaseConfigured,
+    isConfigured: checkIsSupabaseConfigured(),
     isAdminConfigured: checkIsSupabaseAdminConfigured(),
     missingValues: missing,
   };
@@ -119,21 +213,57 @@ export function getSupabaseConfigStatus(): {
  * Uses ONLY the Supabase URL and Publishable Key.
  * NEVER exposes secret or service-role keys to browser bundles.
  */
-export const supabase: SupabaseClient = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabasePublishableKey, {
-      auth: {
-        persistSession: false,
-      },
-    })
-  : createClient('https://placeholder.supabase.co', 'placeholder-anon-key', {
+let cachedPublicClient: SupabaseClient | null = null;
+let cachedPublicUrl = '';
+let cachedPublicKey = '';
+
+export function getSupabaseClient(): SupabaseClient {
+  const url = getCleanSupabaseUrl();
+  const pubKey = getCleanSupabasePublishableKey();
+
+  if (url && !isPlaceholderUrl(url) && pubKey && !isPlaceholderKey(pubKey)) {
+    if (cachedPublicClient && cachedPublicUrl === url && cachedPublicKey === pubKey) {
+      return cachedPublicClient;
+    }
+    cachedPublicUrl = url;
+    cachedPublicKey = pubKey;
+    cachedPublicClient = createClient(url, pubKey, {
       auth: {
         persistSession: false,
       },
     });
+    return cachedPublicClient;
+  }
+
+  // If server context and secret key is available, fallback to admin client for server-side queries
+  if (typeof window === 'undefined') {
+    const secretKey = getCleanSupabaseSecretKey();
+    if (url && !isPlaceholderUrl(url) && secretKey && !isPlaceholderKey(secretKey)) {
+      return getSupabaseAdminClient();
+    }
+  }
+
+  if (!cachedPublicClient) {
+    cachedPublicClient = createClient('https://placeholder.supabase.co', 'placeholder-anon-key', {
+      auth: {
+        persistSession: false,
+      },
+    });
+  }
+  return cachedPublicClient;
+}
+
+export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    const client = getSupabaseClient();
+    const val = Reflect.get(client, prop);
+    return typeof val === 'function' ? val.bind(client) : val;
+  },
+});
 
 /**
  * Server-side Supabase client with elevated privileges for trusted backend operations.
- * Uses the Supabase Secret Key (Service Role).
+ * Uses the Supabase Secret Key (Service Role / sb_secret_*).
  *
  * CRITICAL SECURITY RULE:
  * This client is strictly server-side. In client/browser contexts, it falls back to the
@@ -149,8 +279,8 @@ export function getSupabaseAdminClient(): SupabaseClient {
     return supabase;
   }
 
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  const url = getCleanSupabaseUrl();
+  const key = getCleanSupabaseSecretKey();
 
   if (url && !isPlaceholderUrl(url) && key && !isPlaceholderKey(key)) {
     if (cachedAdminClient && cachedAdminUrl === url && cachedAdminKey === key) {
@@ -183,7 +313,7 @@ export const supabaseAdmin: SupabaseClient = new Proxy({} as SupabaseClient, {
  * when configured, or falling back to local /public assets.
  */
 export function getLogoAssetUrl(fileName: 'Logo PNG 01.svg' | 'Logo PNG.svg' | 'logo.svg'): string {
-  if (isSupabaseConfigured) {
+  if (checkIsSupabaseConfigured()) {
     const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(`logos/${encodeURIComponent(fileName)}`);
     if (data?.publicUrl) return data.publicUrl;
   }
@@ -194,7 +324,7 @@ export function getLogoAssetUrl(fileName: 'Logo PNG 01.svg' | 'Logo PNG.svg' | '
  * Returns the public storage URL for any asset path inside the dedicated bucket.
  */
 export function getStoragePublicUrl(storagePath: string, fallbackUrl?: string): string {
-  if (isSupabaseConfigured) {
+  if (checkIsSupabaseConfigured()) {
     const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath);
     if (data?.publicUrl) return data.publicUrl;
   }

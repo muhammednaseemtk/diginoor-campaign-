@@ -5,6 +5,8 @@ import { uploadPosterToStorage } from '@/lib/server-storage';
 import { isRequestAdmin } from '@/lib/admin-auth';
 import sharp from 'sharp';
 
+export const dynamic = 'force-dynamic';
+
 async function detectCutoutWindow(buffer: Buffer): Promise<PhotoArea | null> {
   try {
     const { data, info } = await sharp(buffer).raw().toBuffer({ resolveWithObject: true });

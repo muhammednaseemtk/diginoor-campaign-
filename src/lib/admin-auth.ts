@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { cookies } from 'next/headers';
+import { getCleanSupabaseSecretKey } from '@/lib/supabase';
 
 export const ADMIN_COOKIE_NAME = 'diginoor_admin_session';
 export const ADMIN_SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -22,7 +23,7 @@ export function getAdminSecret(): string {
 export function verifyAdminPassword(password: string): boolean {
   if (!password || typeof password !== 'string') return false;
   const adminSecret = getAdminSecret();
-  const supabaseSecret = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseSecret = getCleanSupabaseSecretKey();
 
   if (password === adminSecret) return true;
   if (supabaseSecret && password === supabaseSecret) return true;

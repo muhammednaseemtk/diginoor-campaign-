@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 import {
-  isSupabaseConfigured,
-  isSupabaseAdminConfigured,
+  checkIsSupabaseConfigured,
+  checkIsSupabaseAdminConfigured,
   getSupabaseConfigStatus,
+  getCleanSupabasePublishableKey,
+  getCleanSupabaseSecretKey,
   supabase,
   supabaseAdmin,
   STORAGE_BUCKET,
@@ -13,6 +15,8 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const configStatus = getSupabaseConfigStatus();
+  const isAdminReady = checkIsSupabaseAdminConfigured();
+  const isClientReady = checkIsSupabaseConfigured();
 
   const report: {
     status: 'configured' | 'pending_project_url' | 'unconfigured';
@@ -38,18 +42,12 @@ export async function GET() {
   } = {
     status: 'unconfigured',
     frontendClient: {
-      ready: isSupabaseConfigured,
-      usingPublishableKey: Boolean(
-        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-      ),
+      ready: isClientReady,
+      usingPublishableKey: Boolean(getCleanSupabasePublishableKey()),
     },
     serverAdminClient: {
-      ready: isSupabaseAdminConfigured,
-      usingSecretKey: Boolean(
-        process.env.SUPABASE_SECRET_KEY ||
-        process.env.SUPABASE_SERVICE_ROLE_KEY
-      ),
+      ready: isAdminReady,
+      usingSecretKey: Boolean(getCleanSupabaseSecretKey()),
     },
     database: {
       connected: false,
@@ -70,13 +68,15 @@ export async function GET() {
     report.status = 'pending_project_url';
     report.note =
       'Supabase Publishable and Secret credentials are configured properly. The Supabase Project URL is the only missing value.';
-  } else if (isSupabaseConfigured && isSupabaseAdminConfigured) {
+  } else if (isAdminReady || isClientReady) {
     report.status = 'configured';
-    report.note = 'Supabase credentials and URL are fully configured.';
+    report.note = 'Supabase credentials and URL are detected and active.';
+
+    const client = isAdminReady ? supabaseAdmin : supabase;
 
     // Test database connection
     try {
-      const { error: dbError } = await supabase
+      const { error: dbError } = await client
         .from('templates')
         .select('id')
         .limit(1);

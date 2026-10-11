@@ -2,7 +2,6 @@ import fs from 'fs';
 import path from 'path';
 import {
   supabaseAdmin,
-  isSupabaseAdminConfigured,
   checkIsSupabaseAdminConfigured,
   STORAGE_BUCKET,
 } from '@/lib/supabase';
@@ -14,7 +13,7 @@ let bucketVerified = false;
  * Automatically creates it using admin service privileges if missing.
  */
 export async function ensurePostersBucket(): Promise<boolean> {
-  const isConfigured = isSupabaseAdminConfigured || checkIsSupabaseAdminConfigured();
+  const isConfigured = checkIsSupabaseAdminConfigured();
   if (!isConfigured) return false;
   if (bucketVerified) return true;
 
@@ -69,7 +68,7 @@ export async function uploadPosterToStorage(
     throw new Error('Cannot upload an empty image buffer.');
   }
 
-  const isConfigured = isSupabaseAdminConfigured || checkIsSupabaseAdminConfigured();
+  const isConfigured = checkIsSupabaseAdminConfigured();
   if (!isConfigured) {
     throw new Error(
       'Supabase Storage is not configured on the server. Please ensure NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY are set in your environment variables.'
@@ -127,7 +126,7 @@ export async function deletePosterFromStorage(imageUrl: string): Promise<void> {
   try {
     if (!imageUrl) return;
 
-    if (isSupabaseAdminConfigured && imageUrl.includes(`/storage/v1/object/public/${STORAGE_BUCKET}/`)) {
+    if (checkIsSupabaseAdminConfigured() && imageUrl.includes(`/storage/v1/object/public/${STORAGE_BUCKET}/`)) {
       const parts = imageUrl.split(`/storage/v1/object/public/${STORAGE_BUCKET}/`);
       if (parts[1]) {
         await supabaseAdmin.storage.from(STORAGE_BUCKET).remove([decodeURIComponent(parts[1])]);

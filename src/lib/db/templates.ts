@@ -5,8 +5,7 @@ import { PosterTemplate, CreateTemplateInput, PhotoArea } from '@/lib/types/temp
 import {
   supabase,
   supabaseAdmin,
-  isSupabaseConfigured,
-  isSupabaseAdminConfigured,
+  checkIsSupabaseConfigured,
   checkIsSupabaseAdminConfigured,
 } from '@/lib/supabase';
 import { deletePosterFromStorage } from '@/lib/server-storage';
@@ -188,9 +187,11 @@ export const templateDb = {
    * to ensure ready-made posters are always accessible.
    */
   getAll: async (): Promise<PosterTemplate[]> => {
-    if (isSupabaseConfigured) {
+    const isConfigured = checkIsSupabaseAdminConfigured() || checkIsSupabaseConfigured();
+    if (isConfigured) {
       try {
-        const { data, error } = await supabase
+        const client = checkIsSupabaseAdminConfigured() ? supabaseAdmin : supabase;
+        const { data, error } = await client
           .from('templates')
           .select('*')
           .order('created_at', { ascending: false });
@@ -233,10 +234,12 @@ export const templateDb = {
    * Handles UUID check carefully so PostgreSQL does not throw a 22P02 syntax error.
    */
   getBySlug: async (slugOrId: string): Promise<PosterTemplate | null> => {
-    if (isSupabaseConfigured) {
+    const isConfigured = checkIsSupabaseAdminConfigured() || checkIsSupabaseConfigured();
+    if (isConfigured) {
       try {
+        const client = checkIsSupabaseAdminConfigured() ? supabaseAdmin : supabase;
         const isUuid = UUID_REGEX.test(slugOrId);
-        let query = supabase.from('templates').select('*');
+        let query = client.from('templates').select('*');
 
         if (isUuid) {
           query = query.or(`id.eq.${slugOrId},slug.eq.${slugOrId}`);
@@ -284,7 +287,7 @@ export const templateDb = {
    * 3. Retains the exact photo-area configuration associated with that record.
    */
   create: async (input: CreateTemplateInput): Promise<PosterTemplate> => {
-    const isConfigured = isSupabaseAdminConfigured || checkIsSupabaseAdminConfigured();
+    const isConfigured = checkIsSupabaseAdminConfigured();
     // 1. If Supabase admin client is configured, save directly to database table 'templates'
     if (isConfigured) {
       const { data, error } = await supabaseAdmin
@@ -352,7 +355,7 @@ export const templateDb = {
       writeData(list);
     }
 
-    if (isSupabaseAdminConfigured) {
+    if (checkIsSupabaseAdminConfigured()) {
       try {
         const payload: Record<string, unknown> = {};
         if (updates.title) payload.title = updates.title;
@@ -410,7 +413,7 @@ export const templateDb = {
       writeData(filtered);
     }
 
-    if (isSupabaseAdminConfigured) {
+    if (checkIsSupabaseAdminConfigured()) {
       try {
         const isUuid = UUID_REGEX.test(slugOrId);
         let query = supabaseAdmin.from('templates').delete();
