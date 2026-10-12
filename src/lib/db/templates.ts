@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import crypto from 'crypto';
 import { PosterTemplate, CreateTemplateInput, PhotoArea } from '@/lib/types/template';
 import {
   supabase,
@@ -88,6 +87,47 @@ function parseCanvasConfig(raw: unknown): PhotoArea {
   return { x: 200, y: 250, width: 680, height: 650, borderRadius: 16, layer: 'inside' };
 }
 
+async function isPosterImageShared(
+  imageUrl: string,
+  excludeId?: string,
+  excludeSlug?: string
+): Promise<boolean> {
+  if (!imageUrl) return false;
+
+  // Never delete default/sample template stock assets
+  if (imageUrl.startsWith('/templates/') || imageUrl.includes('sample-portrait')) {
+    return true;
+  }
+
+  // Check Supabase if configured
+  if (checkIsSupabaseAdminConfigured()) {
+    try {
+      const { data } = await supabaseAdmin
+        .from('templates')
+        .select('id, slug')
+        .eq('base_image_url', imageUrl);
+
+      if (Array.isArray(data)) {
+        const others = data.filter(
+          (row) => String(row.id) !== excludeId && row.slug !== excludeSlug
+        );
+        if (others.length > 0) {
+          return true;
+        }
+      }
+    } catch (err) {
+      console.warn('Error checking shared image in Supabase:', err);
+    }
+  }
+
+  // Check local data.json
+  const localList = readData();
+  const localOthers = localList.filter(
+    (t) => t.id !== excludeId && t.slug !== excludeSlug && t.posterImage === imageUrl
+  );
+  return localOthers.length > 0;
+}
+
 function readData(): PosterTemplate[] {
   try {
     if (!fs.existsSync(DATA_FILE_PATH)) {
@@ -105,15 +145,10 @@ function readData(): PosterTemplate[] {
       writeData(cleanList);
     }
 
-    if (cleanList.length === 0) {
-      writeData(DEFAULT_TEMPLATES);
-      return DEFAULT_TEMPLATES;
-    }
-
     return cleanList;
   } catch (err) {
     console.error('Error reading template data:', err);
-    return DEFAULT_TEMPLATES;
+    return [];
   }
 }
 
@@ -170,15 +205,14 @@ export const templateDb = {
             }))
             .filter((t) => !isUnwantedDefaultPoster(t));
 
-          // Merge local/cached templates (only non-default templates)
-          const localList = readData().filter((t) => !isUnwantedDefaultPoster(t));
-          const merged = [...remoteList];
-          for (const localTpl of localList) {
-            if (!merged.some((m) => m.slug === localTpl.slug || m.id === localTpl.id)) {
-              merged.push(localTpl);
-            }
+          // Keep local cache file synchronized with Supabase persistent state
+          try {
+            writeData(remoteList);
+          } catch {
+            // Ignore in read-only filesystems
           }
-          return merged;
+
+          return remoteList;
         }
       } catch (err) {
         console.warn('Failed to fetch from Supabase templates table, falling back to local:', err);
@@ -367,36 +401,77 @@ export const templateDb = {
   },
 
   /**
-   * Deletes a poster template from Supabase Storage & Database.
+   * Deletes a poster template from persistent storage (Supabase / local data.json).
+   * Ensures:
+   * 1. Resolves record from Supabase or local cache before deletion.
+   * 2. Confirms actual persistent deletion from database and local storage.
+   * 3. Associated image is removed only when appropriate and avoids deleting shared images.
+   * 4. Returns true on success or false if record was not found.
    */
   delete: async (slugOrId: string): Promise<boolean> => {
-    const list = readData();
-    const toDelete = list.find((t) => t.id === slugOrId || t.slug === slugOrId);
-    const filtered = list.filter((t) => t.id !== slugOrId && t.slug !== slugOrId);
+    // 1. Locate template across persistent sources
+    const toDelete =
+      (await templateDb.getBySlug(slugOrId)) ||
+      readData().find((t) => t.id === slugOrId || t.slug === slugOrId) ||
+      null;
 
-    if (toDelete?.posterImage) {
-      await deletePosterFromStorage(toDelete.posterImage);
+    const list = readData();
+    const localIndex = list.findIndex(
+      (t) => t.id === slugOrId || t.slug === slugOrId || (toDelete && (t.id === toDelete.id || t.slug === toDelete.slug))
+    );
+
+    // If template does not exist in either Supabase or local data
+    if (!toDelete && localIndex === -1) {
+      return false;
     }
+
+    const posterImage = toDelete?.posterImage || (localIndex !== -1 ? list[localIndex].posterImage : undefined);
+    const targetId = toDelete?.id || (localIndex !== -1 ? list[localIndex].id : slugOrId);
+    const targetSlug = toDelete?.slug || (localIndex !== -1 ? list[localIndex].slug : slugOrId);
+
+    // 2. Remove associated poster image only if not shared with other posters
+    if (posterImage) {
+      const isShared = await isPosterImageShared(posterImage, targetId, targetSlug);
+      if (!isShared) {
+        await deletePosterFromStorage(posterImage);
+      }
+    }
+
+    // 3. Remove from Supabase DB if configured
+    if (checkIsSupabaseAdminConfigured()) {
+      let query = supabaseAdmin.from('templates').delete();
+      const isUuidTargetId = UUID_REGEX.test(targetId);
+      const isUuidSlugOrId = UUID_REGEX.test(slugOrId);
+
+      if (isUuidTargetId && targetSlug && targetSlug !== targetId) {
+        query = query.or(`id.eq.${targetId},slug.eq.${targetSlug}`);
+      } else if (isUuidTargetId) {
+        query = query.eq('id', targetId);
+      } else if (isUuidSlugOrId) {
+        query = query.eq('id', slugOrId);
+      } else if (targetSlug) {
+        query = query.eq('slug', targetSlug);
+      } else {
+        query = query.eq('slug', slugOrId);
+      }
+
+      const { error: dbError } = await query;
+      if (dbError) {
+        console.error('Error deleting template from Supabase DB:', dbError);
+        throw new Error(`Failed to delete template from database: ${dbError.message}`);
+      }
+    }
+
+    // 4. Remove from local data.json
+    const filtered = list.filter((t) => {
+      if (t.id === slugOrId || t.slug === slugOrId) return false;
+      if (targetId && t.id === targetId) return false;
+      if (targetSlug && t.slug === targetSlug) return false;
+      return true;
+    });
 
     if (filtered.length !== list.length) {
       writeData(filtered);
-    }
-
-    if (checkIsSupabaseAdminConfigured()) {
-      try {
-        const isUuid = UUID_REGEX.test(slugOrId);
-        let query = supabaseAdmin.from('templates').delete();
-
-        if (isUuid) {
-          query = query.or(`id.eq.${slugOrId},slug.eq.${slugOrId}`);
-        } else {
-          query = query.eq('slug', slugOrId);
-        }
-
-        await query;
-      } catch (err) {
-        console.warn('Error deleting template from Supabase DB:', err);
-      }
     }
 
     return true;

@@ -18,8 +18,6 @@ import {
   UploadCloud,
   PlusCircle,
   Sparkles,
-  X,
-  FileImage,
   AlertCircle,
 } from 'lucide-react';
 
@@ -53,7 +51,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     let isCancelled = false;
 
-    fetch('/api/templates')
+    fetch('/api/templates', { cache: 'no-store' })
       .then((res) => {
         if (!res.ok) throw new Error('Failed to fetch templates');
         return res.json();
@@ -83,7 +81,7 @@ export default function AdminDashboard() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch('/api/templates');
+      const res = await fetch('/api/templates', { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed to fetch templates');
       if (Array.isArray(data)) setTemplates(data);
@@ -213,7 +211,7 @@ export default function AdminDashboard() {
 
     try {
       setDeletingId(id);
-      const res = await fetch(`/api/templates/${id}`, {
+      const res = await fetch(`/api/templates/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
       if (!res.ok) {
@@ -221,6 +219,7 @@ export default function AdminDashboard() {
         throw new Error(data.error || 'Failed to delete template');
       }
       setTemplates((prev) => prev.filter((t) => t.id !== id && t.slug !== id));
+      await reloadTemplates();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to delete template';
       alert(msg);
