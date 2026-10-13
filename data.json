@@ -1,24 +1,3 @@
 {
-  "templates": [
-    {
-      "id": "tpl-1791129688649-kvvog",
-      "title": "20261004 200434",
-      "slug": "20261004-200434-0dcu",
-      "description": "Ready-made 20261004 200434 poster template.",
-      "category": "Ready-Made Posters",
-      "width": 960,
-      "height": 1280,
-      "posterImage": "/uploads/poster-1791129688640-20261004_200434.png",
-      "photoArea": {
-        "x": 69,
-        "y": 328,
-        "width": 830,
-        "height": 767,
-        "borderRadius": 20,
-        "layer": "behind"
-      },
-      "sampleUserPhoto": "/templates/sample-portrait.jpg",
-      "createdAt": "2026-10-04T16:01:28.649Z"
-    }
-  ]
+  "templates": []
 }

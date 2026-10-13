@@ -13,28 +13,7 @@ const DATA_FILE_PATH = path.join(process.cwd(), 'data.json');
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export const DEFAULT_TEMPLATES: PosterTemplate[] = [
-  {
-    id: 'tpl-1791129688649-kvvog',
-    title: '20261004 200434',
-    slug: '20261004-200434-0dcu',
-    description: 'Ready-made 20261004 200434 poster template.',
-    category: 'Ready-Made Posters',
-    width: 960,
-    height: 1280,
-    posterImage: '/uploads/poster-1791129688640-20261004_200434.png',
-    photoArea: {
-      x: 69,
-      y: 328,
-      width: 830,
-      height: 767,
-      borderRadius: 20,
-      layer: 'behind',
-    },
-    sampleUserPhoto: '/templates/sample-portrait.jpg',
-    createdAt: '2026-10-04T16:01:28.649Z',
-  },
-];
+export const DEFAULT_TEMPLATES: PosterTemplate[] = [];
 
 export const UNWANTED_DEFAULT_SLUGS = [
   'tech-summit-keynote',
@@ -153,12 +132,8 @@ function readData(): PosterTemplate[] {
 }
 
 function writeData(templates: PosterTemplate[]) {
-  try {
-    const cleanTemplates = templates.filter((t) => !isUnwantedDefaultPoster(t));
-    fs.writeFileSync(DATA_FILE_PATH, JSON.stringify({ templates: cleanTemplates }, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Error writing template data:', err);
-  }
+  const cleanTemplates = templates.filter((t) => !isUnwantedDefaultPoster(t));
+  fs.writeFileSync(DATA_FILE_PATH, JSON.stringify({ templates: cleanTemplates }, null, 2), 'utf-8');
 }
 
 export const templateDb = {
@@ -438,7 +413,11 @@ export const templateDb = {
     }
 
     // 3. Remove from Supabase DB if configured
-    if (checkIsSupabaseAdminConfigured()) {
+    const isSupabaseActive = checkIsSupabaseAdminConfigured() || checkIsSupabaseConfigured();
+    if (isSupabaseActive) {
+      if (!checkIsSupabaseAdminConfigured()) {
+        throw new Error('Supabase admin credentials are required to permanently delete templates from database.');
+      }
       let query = supabaseAdmin.from('templates').delete();
       const isUuidTargetId = UUID_REGEX.test(targetId);
       const isUuidSlugOrId = UUID_REGEX.test(slugOrId);
@@ -470,9 +449,7 @@ export const templateDb = {
       return true;
     });
 
-    if (filtered.length !== list.length) {
-      writeData(filtered);
-    }
+    writeData(filtered);
 
     return true;
   },
