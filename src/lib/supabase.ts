@@ -74,11 +74,38 @@ export function normalizeSupabaseUrl(url?: string | null): string {
   let cleaned = cleanEnvValue(url);
   if (!cleaned) return '';
 
+  // Extract ref from Postgres connection string if user accidentally pasted database URI
+  const dbUriMatch = cleaned.match(/@(?:db\.)?([a-zA-Z0-9_-]+)\.supabase\.co/i);
+  if (dbUriMatch && dbUriMatch[1]) {
+    cleaned = `https://${dbUriMatch[1]}.supabase.co`;
+  }
+
   // Extract ref from Supabase dashboard URL if user accidentally pasted dashboard link
   const dashboardMatch = cleaned.match(/supabase\.com\/dashboard\/project\/([a-zA-Z0-9_-]+)/i);
   if (dashboardMatch && dashboardMatch[1]) {
     cleaned = `https://${dashboardMatch[1]}.supabase.co`;
   }
+
+  // Handle db.<ref>.supabase.co (pooler/direct host prefix)
+  const dbPrefixMatch = cleaned.match(/^https?:\/\/db\.([a-zA-Z0-9_-]+)\.supabase\.co/i);
+  if (dbPrefixMatch && dbPrefixMatch[1]) {
+    cleaned = `https://${dbPrefixMatch[1]}.supabase.co`;
+  }
+
+  // Auto-correct common .supabase.com domain typo to .supabase.co
+  const comMatch = cleaned.match(/^https?:\/\/([a-zA-Z0-9_-]+)\.supabase\.com(?::\d+)?(\/.*)?$/i);
+  if (comMatch && comMatch[1]) {
+    cleaned = `https://${comMatch[1]}.supabase.co${comMatch[2] || ''}`;
+  }
+
+  // Strip database port (e.g., :5432 or :6543) if appended to HTTP url
+  const portMatch = cleaned.match(/^(https?:\/\/[a-zA-Z0-9_.-]+(?:\.supabase\.co)):(?:\d+)(\/.*)?$/i);
+  if (portMatch && portMatch[1]) {
+    cleaned = portMatch[1] + (portMatch[2] || '');
+  }
+
+  // Strip trailing /rest/v1 or /storage/v1 endpoints from base URL
+  cleaned = cleaned.replace(/\/(?:rest|storage)\/v1\/?$/i, '');
 
   // Handle pure 20-character project ref (standard Supabase project identifier)
   if (/^[a-zA-Z0-9]{20}$/.test(cleaned)) {
@@ -104,8 +131,11 @@ export function isPlaceholderUrl(url?: string): boolean {
     normalized.includes('your-project-id') ||
     normalized.includes('your-supabase-url') ||
     normalized.includes('placeholder.supabase.co') ||
+    normalized.includes('://.supabase.co') ||
     normalized === 'http://' ||
     normalized === 'https://' ||
+    normalized === 'https://supabase.com' ||
+    normalized === 'http://supabase.com' ||
     normalized.includes('example.com')
   );
 }

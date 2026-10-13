@@ -284,6 +284,12 @@ export const templateDb = {
         .single();
 
       if (error) {
+        const errorMsg = error.message || '';
+        if (errorMsg.toLowerCase().includes('fetch failed')) {
+          throw new Error(
+            'Failed to save template to database: Network connection failed (fetch failed). Please verify that SUPABASE_URL in Vercel is set to your active Supabase project URL (https://<project-ref>.supabase.co) and the project is active on Supabase.'
+          );
+        }
         throw new Error(`Failed to save template to database: ${error.message}`);
       }
 

@@ -118,6 +118,12 @@ export async function uploadPosterToStorage(
   }
 
   if (uploadError) {
+    const errorMsg = uploadError.message || '';
+    if (errorMsg.toLowerCase().includes('fetch failed')) {
+      throw new Error(
+        `Supabase Storage upload failed (${STORAGE_BUCKET}): Network connection failed (fetch failed). Please verify that SUPABASE_URL in Vercel is set to your active Supabase project URL (https://<project-ref>.supabase.co) and the project is active on Supabase.`
+      );
+    }
     throw new Error(`Supabase Storage upload failed (${STORAGE_BUCKET}): ${uploadError.message}`);
   }
 
