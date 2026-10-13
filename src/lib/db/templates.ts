@@ -71,8 +71,8 @@ function parseCanvasConfig(raw: unknown): PhotoArea {
   const textOverlays: PosterTextOverlay[] = rawTexts.map((item: Partial<PosterTextOverlay>) => ({
     id: item.id || `txt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     text: String(item.text || ''),
-    x: Number(item.x) || 540,
-    y: Number(item.y) || 1200,
+    x: typeof item.x === 'number' && !isNaN(item.x) ? item.x : (item.x !== undefined && !isNaN(Number(item.x)) ? Number(item.x) : 540),
+    y: typeof item.y === 'number' && !isNaN(item.y) ? item.y : (item.y !== undefined && !isNaN(Number(item.y)) ? Number(item.y) : 1200),
     fontSize: Number(item.fontSize) || 54,
     fontFamily: item.fontFamily || 'system-ui, -apple-system, sans-serif',
     color: item.color || '#ffffff',

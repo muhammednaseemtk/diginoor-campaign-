@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { PhotoArea, PosterTextOverlay } from '@/lib/types/template';
 import { InteractiveAdminCanvas } from '@/components/admin/InteractiveAdminCanvas';
@@ -18,13 +17,24 @@ import {
   Sparkles,
   Info,
   CheckCircle2,
+  AlertCircle,
   Type,
   Plus,
   Trash2,
 } from 'lucide-react';
 
 export default function AdminCreateTemplatePage() {
-  const router = useRouter();
+  // Floating Toast / Snackbar state
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setToast({ message, type });
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast(null);
+    }, 3500);
+  };
 
   // Template form state
   const [title, setTitle] = useState('');
@@ -62,6 +72,7 @@ export default function AdminCreateTemplatePage() {
 
   // Text overlays state
   const [textOverlays, setTextOverlays] = useState<PosterTextOverlay[]>([]);
+  const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
@@ -87,7 +98,7 @@ export default function AdminCreateTemplatePage() {
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      alert('Please select an image file (PNG, JPG, WebP, SVG).');
+      showToast('Please select an image file (PNG, JPG, WebP, SVG).', 'error');
       return;
     }
 
@@ -239,10 +250,11 @@ export default function AdminCreateTemplatePage() {
   };
 
   const handleAddText = () => {
+    const newId = `txt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     setTextOverlays((prev) => [
       ...prev,
       {
-        id: `txt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        id: newId,
         text: 'Custom Poster Text',
         fontSize: Math.max(32, Math.round(posterHeight * 0.04)),
         color: '#ffffff',
@@ -254,6 +266,7 @@ export default function AdminCreateTemplatePage() {
         shadowBlur: 8,
       },
     ]);
+    setSelectedTextId(newId);
   };
 
   const handleUpdateText = (index: number, field: keyof PosterTextOverlay, value: string | number) => {
@@ -265,7 +278,13 @@ export default function AdminCreateTemplatePage() {
   };
 
   const handleRemoveText = (index: number) => {
-    setTextOverlays((prev) => prev.filter((_, i) => i !== index));
+    setTextOverlays((prev) => {
+      const target = prev[index];
+      if (target && target.id === selectedTextId) {
+        setSelectedTextId(null);
+      }
+      return prev.filter((_, i) => i !== index);
+    });
   };
 
   const handleSave = async () => {
@@ -331,10 +350,32 @@ export default function AdminCreateTemplatePage() {
         throw new Error(data.error || 'Failed to save template');
       }
 
-      router.push('/admin');
+      showToast('Poster created successfully!', 'success');
+      setErrorMsg(null);
+
+      // Clear the creation form after successful creation
+      setTitle('');
+      setSlug('');
+      setDescription('');
+      setPosterImage(null);
+      setSelectedFile(null);
+      setTextOverlays([]);
+      setPhotoArea({
+        x: 200,
+        y: 250,
+        width: 680,
+        height: 650,
+        borderRadius: 16,
+        layer: 'inside',
+      });
+      setShowSamplePreview(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error saving template';
       setErrorMsg(msg);
+      showToast(msg, 'error');
     } finally {
       setSaving(false);
     }
@@ -675,75 +716,111 @@ export default function AdminCreateTemplatePage() {
                   No custom text added. Click &quot;Add Text&quot; to overlay titles or captions onto this poster.
                 </p>
               ) : (
-                <div className="space-y-3 max-h-[260px] overflow-y-auto pr-1">
-                  {textOverlays.map((textItem, idx) => (
-                    <div
-                      key={textItem.id || idx}
-                      className="bg-[#0D0D0D] border border-[#262626] rounded-xl p-3 space-y-2.5"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-semibold text-[#A1A1AA]">
-                          Text #{idx + 1}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveText(idx)}
-                          className="text-[#71717A] hover:text-red-400 p-1 transition-colors"
-                          title="Remove text"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-
-                      <Input
-                        value={textItem.text}
-                        onChange={(e) => handleUpdateText(idx, 'text', e.target.value)}
-                        placeholder="e.g. KEYNOTE SPEAKER"
-                        className="h-8 rounded-lg text-xs bg-[#111111] border-[#2A2A2A] text-white"
-                      />
-
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <Label className="text-[10px] text-[#71717A] block mb-0.5">Size (px)</Label>
-                          <Input
-                            type="number"
-                            value={textItem.fontSize || 48}
-                            onChange={(e) =>
-                              handleUpdateText(idx, 'fontSize', Math.max(12, Number(e.target.value)))
-                            }
-                            className="h-7 rounded-lg text-xs bg-[#111111] border-[#2A2A2A] text-white"
-                          />
+                <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1">
+                  {textOverlays.map((textItem, idx) => {
+                    const itemKey = textItem.id || `txt-${idx}`;
+                    const isSelected = selectedTextId === itemKey;
+                    return (
+                      <div
+                        key={itemKey}
+                        onClick={() => setSelectedTextId(itemKey)}
+                        className={`bg-[#0D0D0D] border rounded-xl p-3 space-y-2.5 transition-colors cursor-pointer ${
+                          isSelected
+                            ? 'border-sky-500 ring-1 ring-sky-500/50 bg-[#0f172a]/50'
+                            : 'border-[#262626] hover:border-neutral-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-semibold text-[#A1A1AA]">
+                              Text #{idx + 1}
+                            </span>
+                            {isSelected && (
+                              <span className="bg-sky-500/20 text-sky-400 text-[10px] px-1.5 py-0.5 rounded font-medium">
+                                Selected
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveText(idx);
+                            }}
+                            className="text-[#71717A] hover:text-red-400 p-1 transition-colors"
+                            title="Remove text"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
                         </div>
 
-                        <div>
-                          <Label className="text-[10px] text-[#71717A] block mb-0.5">Color</Label>
-                          <div className="flex items-center gap-1.5 bg-[#111111] border border-[#2A2A2A] rounded-lg px-1.5 py-0.5 h-7">
-                            <input
-                              type="color"
-                              value={textItem.color || '#ffffff'}
-                              onChange={(e) => handleUpdateText(idx, 'color', e.target.value)}
-                              className="h-5 w-5 border-0 bg-transparent cursor-pointer rounded"
+                        <Input
+                          value={textItem.text}
+                          onChange={(e) => handleUpdateText(idx, 'text', e.target.value)}
+                          onFocus={() => setSelectedTextId(itemKey)}
+                          placeholder="e.g. KEYNOTE SPEAKER"
+                          className="h-8 rounded-lg text-xs bg-[#111111] border-[#2A2A2A] text-white"
+                        />
+
+                        <div className="grid grid-cols-4 gap-2">
+                          <div>
+                            <Label className="text-[10px] text-[#71717A] block mb-0.5">Size (px)</Label>
+                            <Input
+                              type="number"
+                              value={textItem.fontSize || 48}
+                              onChange={(e) =>
+                                handleUpdateText(idx, 'fontSize', Math.max(12, Number(e.target.value)))
+                              }
+                              onFocus={() => setSelectedTextId(itemKey)}
+                              className="h-7 rounded-lg text-xs bg-[#111111] border-[#2A2A2A] text-white"
                             />
-                            <span className="text-[10px] font-mono text-[#A1A1AA] uppercase">
-                              {textItem.color || '#FFF'}
-                            </span>
+                          </div>
+
+                          <div>
+                            <Label className="text-[10px] text-[#71717A] block mb-0.5">Color</Label>
+                            <div className="flex items-center gap-1 bg-[#111111] border border-[#2A2A2A] rounded-lg px-1.5 py-0.5 h-7">
+                              <input
+                                type="color"
+                                value={textItem.color || '#ffffff'}
+                                onChange={(e) => handleUpdateText(idx, 'color', e.target.value)}
+                                onFocus={() => setSelectedTextId(itemKey)}
+                                className="h-4 w-4 border-0 bg-transparent cursor-pointer rounded"
+                              />
+                              <span className="text-[9px] font-mono text-[#A1A1AA] uppercase truncate">
+                                {textItem.color || '#FFF'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div>
+                            <Label className="text-[10px] text-[#71717A] block mb-0.5">X Pos (px)</Label>
+                            <Input
+                              type="number"
+                              value={textItem.x}
+                              onChange={(e) =>
+                                handleUpdateText(idx, 'x', Math.max(0, Number(e.target.value)))
+                              }
+                              onFocus={() => setSelectedTextId(itemKey)}
+                              className="h-7 rounded-lg text-xs bg-[#111111] border-[#2A2A2A] text-white"
+                            />
+                          </div>
+
+                          <div>
+                            <Label className="text-[10px] text-[#71717A] block mb-0.5">Y Pos (px)</Label>
+                            <Input
+                              type="number"
+                              value={textItem.y}
+                              onChange={(e) =>
+                                handleUpdateText(idx, 'y', Math.max(0, Number(e.target.value)))
+                              }
+                              onFocus={() => setSelectedTextId(itemKey)}
+                              className="h-7 rounded-lg text-xs bg-[#111111] border-[#2A2A2A] text-white"
+                            />
                           </div>
                         </div>
-
-                        <div>
-                          <Label className="text-[10px] text-[#71717A] block mb-0.5">Y Pos (px)</Label>
-                          <Input
-                            type="number"
-                            value={textItem.y}
-                            onChange={(e) =>
-                              handleUpdateText(idx, 'y', Math.max(0, Number(e.target.value)))
-                            }
-                            className="h-7 rounded-lg text-xs bg-[#111111] border-[#2A2A2A] text-white"
-                          />
-                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
@@ -761,7 +838,7 @@ export default function AdminCreateTemplatePage() {
                 </CardTitle>
                 <CardDescription className="text-xs text-[#A1A1AA]">
                   {posterImage
-                    ? 'Drag the box or handles to adjust the photo position and size.'
+                    ? 'Drag photo slot or handles • Click & drag text on canvas to position anywhere.'
                     : 'Upload a poster image to start configuring.'}
                 </CardDescription>
               </div>
@@ -793,6 +870,9 @@ export default function AdminCreateTemplatePage() {
                   showSamplePreview={showSamplePreview}
                   sampleImageUrl="/templates/sample-portrait.jpg"
                   textOverlays={textOverlays}
+                  onTextOverlaysChange={setTextOverlays}
+                  selectedTextId={selectedTextId}
+                  onSelectTextId={setSelectedTextId}
                 />
               ) : (
                 <div
@@ -813,6 +893,33 @@ export default function AdminCreateTemplatePage() {
           </Card>
         </div>
       </div>
+
+      {/* Floating Toast / Snackbar Notification */}
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl border backdrop-blur-md shadow-2xl text-xs sm:text-sm font-medium transition-all duration-300 animate-in fade-in slide-in-from-bottom-4 ${
+            toast.type === 'success'
+              ? 'bg-[#141414]/95 border-emerald-500/40 text-emerald-300 shadow-emerald-950/20'
+              : 'bg-[#141414]/95 border-red-500/40 text-red-300 shadow-red-950/20'
+          }`}
+        >
+          {toast.type === 'success' ? (
+            <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+          ) : (
+            <AlertCircle className="h-4 w-4 text-red-400 shrink-0" />
+          )}
+          <span className="text-white">{toast.message}</span>
+          <button
+            onClick={() => setToast(null)}
+            className="text-[#71717A] hover:text-white transition-colors ml-2 font-bold text-base leading-none p-0.5"
+            aria-label="Dismiss notification"
+          >
+            ×
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -30,7 +30,20 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+
+  // Floating Toast / Snackbar state
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+    setToast({ message, type });
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast(null);
+    }, 3500);
+  }, []);
 
   // Categories state
   const [categories, setCategories] = useState<string[]>([
@@ -53,6 +66,7 @@ export default function AdminDashboard() {
   const [editingTemplate, setEditingTemplate] = useState<PosterTemplate | null>(null);
   const [editingPhotoArea, setEditingPhotoArea] = useState<PhotoArea | null>(null);
   const [editingTextOverlays, setEditingTextOverlays] = useState<PosterTextOverlay[]>([]);
+  const [selectedEditTextId, setSelectedEditTextId] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [showSampleInEdit, setShowSampleInEdit] = useState(false);
 
@@ -66,11 +80,11 @@ export default function AdminDashboard() {
   const [uploadWidth, setUploadWidth] = useState(1080);
   const [uploadHeight, setUploadHeight] = useState(1350);
   const [uploadTextOverlays, setUploadTextOverlays] = useState<PosterTextOverlay[]>([]);
+  const [selectedUploadTextId, setSelectedUploadTextId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadModalError, setUploadModalError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const uploadCanvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     let isCancelled = false;
@@ -108,6 +122,9 @@ export default function AdminDashboard() {
 
     return () => {
       isCancelled = true;
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -133,29 +150,7 @@ export default function AdminDashboard() {
     }
   }, []);
 
-  // Redraw upload preview canvas when artwork or text overlays change
-  useEffect(() => {
-    if (!uploadPreviewUrl || !uploadCanvasRef.current) return;
-    const canvas = uploadCanvasRef.current;
-    const img = new window.Image();
-    img.src = uploadPreviewUrl;
-    img.onload = () => {
-      renderPosterToCanvas({
-        posterImage: img,
-        photoArea: {
-          x: 0,
-          y: 0,
-          width: 0,
-          height: 0,
-          borderRadius: 0,
-          layer: 'inside',
-        },
-        canvas,
-        showPlaceholderGuide: false,
-        textOverlays: uploadTextOverlays,
-      });
-    };
-  }, [uploadPreviewUrl, uploadTextOverlays, uploadWidth, uploadHeight]);
+
 
   /**
    * Creates a new category persistently
@@ -202,7 +197,7 @@ export default function AdminDashboard() {
       }
 
       setUploadCategory(createdCat);
-      setUploadSuccess(`Category "${createdCat}" created successfully!`);
+      showToast(`Category "${createdCat}" created successfully!`, 'success');
       setShowCreateCategoryModal(false);
       setShowInlineCategoryInput(false);
       setNewCategoryName('');
@@ -220,10 +215,11 @@ export default function AdminDashboard() {
   const handleAddUploadText = () => {
     const newY = Math.round(uploadHeight * 0.85);
     const newX = Math.round(uploadWidth / 2);
+    const newId = `txt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     setUploadTextOverlays((prev) => [
       ...prev,
       {
-        id: `txt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        id: newId,
         text: 'Custom Poster Text',
         fontSize: Math.max(32, Math.round(uploadHeight * 0.04)),
         color: '#ffffff',
@@ -235,6 +231,7 @@ export default function AdminDashboard() {
         shadowBlur: 8,
       },
     ]);
+    setSelectedUploadTextId(newId);
   };
 
   const handleUpdateUploadText = (index: number, field: keyof PosterTextOverlay, value: string | number) => {
@@ -246,7 +243,13 @@ export default function AdminDashboard() {
   };
 
   const handleRemoveUploadText = (index: number) => {
-    setUploadTextOverlays((prev) => prev.filter((_, i) => i !== index));
+    setUploadTextOverlays((prev) => {
+      const target = prev[index];
+      if (target && target.id === selectedUploadTextId) {
+        setSelectedUploadTextId(null);
+      }
+      return prev.filter((_, i) => i !== index);
+    });
   };
 
   /**
@@ -256,10 +259,11 @@ export default function AdminDashboard() {
     if (!editingTemplate) return;
     const newY = Math.round(editingTemplate.height * 0.85);
     const newX = Math.round(editingTemplate.width / 2);
+    const newId = `txt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     setEditingTextOverlays((prev) => [
       ...prev,
       {
-        id: `txt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        id: newId,
         text: 'Custom Poster Text',
         fontSize: Math.max(32, Math.round(editingTemplate.height * 0.04)),
         color: '#ffffff',
@@ -271,6 +275,7 @@ export default function AdminDashboard() {
         shadowBlur: 8,
       },
     ]);
+    setSelectedEditTextId(newId);
   };
 
   const handleUpdateEditText = (index: number, field: keyof PosterTextOverlay, value: string | number) => {
@@ -282,7 +287,13 @@ export default function AdminDashboard() {
   };
 
   const handleRemoveEditText = (index: number) => {
-    setEditingTextOverlays((prev) => prev.filter((_, i) => i !== index));
+    setEditingTextOverlays((prev) => {
+      const target = prev[index];
+      if (target && target.id === selectedEditTextId) {
+        setSelectedEditTextId(null);
+      }
+      return prev.filter((_, i) => i !== index);
+    });
   };
 
   /**
@@ -294,7 +305,7 @@ export default function AdminDashboard() {
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      alert('Please select an image file (PNG, JPG, WebP, or SVG).');
+      showToast('Please select an image file (PNG, JPG, WebP, or SVG).', 'error');
       return;
     }
 
@@ -387,8 +398,12 @@ export default function AdminDashboard() {
       }
 
       // Add to template list immediately so it appears on admin & user pages
-      setTemplates((prev) => [newTemplate, ...prev]);
-      setUploadSuccess(`"${newTemplate.title}" was uploaded to storage and saved successfully! It is now live for users.`);
+      setTemplates((prev) => [newTemplate, ...prev.filter((t) => t.id !== newTemplate.id && t.slug !== newTemplate.slug)]);
+      showToast('Poster created successfully!', 'success');
+      setError(null);
+
+      // Re-fetch in background to ensure persistence
+      reloadTemplates();
 
       // Clean up and close modal
       if (uploadPreviewUrl) {
@@ -397,11 +412,15 @@ export default function AdminDashboard() {
       setUploadModalOpen(false);
       setUploadFile(null);
       setUploadPreviewUrl(null);
+      setUploadTitle('');
+      setUploadDescription('');
       setUploadTextOverlays([]);
       setShowInlineCategoryInput(false);
+      setUploadModalError(null);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error uploading poster';
       setUploadModalError(msg);
+      showToast(msg, 'error');
     } finally {
       setUploading(false);
     }
@@ -429,13 +448,13 @@ export default function AdminDashboard() {
       setTemplates((prev) =>
         prev.filter((t) => t.id !== id && t.slug !== id && (!slug || (t.slug !== slug && t.id !== slug)))
       );
-      setUploadSuccess(`Poster "${title}" deleted successfully.`);
+      showToast('Poster deleted successfully!', 'success');
       setError(null);
       await reloadTemplates();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to delete template';
       setError(msg);
-      alert(msg);
+      showToast(msg, 'error');
     } finally {
       setDeletingId(null);
     }
@@ -453,21 +472,21 @@ export default function AdminDashboard() {
           textOverlays: editingTextOverlays,
         }),
       });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to save configuration');
-      }
       const updated = await res.json();
+      if (!res.ok) {
+        throw new Error(updated?.error || 'Failed to save configuration');
+      }
       setTemplates((prev) =>
         prev.map((t) => (t.id === updated.id || t.slug === updated.slug ? updated : t))
       );
-      setUploadSuccess(`Configuration and text for "${updated.title}" saved successfully!`);
+      showToast('Configuration saved successfully!', 'success');
       setEditingTemplate(null);
       setEditingPhotoArea(null);
       setEditingTextOverlays([]);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error updating template';
-      alert(msg);
+      setError(msg);
+      showToast(msg, 'error');
     } finally {
       setSavingEdit(false);
     }
@@ -639,21 +658,6 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Success Notification */}
-      {uploadSuccess && (
-        <div className="mb-6 p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs sm:text-sm flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
-            <span>{uploadSuccess}</span>
-          </div>
-          <button
-            onClick={() => setUploadSuccess(null)}
-            className="text-emerald-400 hover:text-emerald-200 font-bold ml-4"
-          >
-            ×
-          </button>
-        </div>
-      )}
 
       {/* Error Notification */}
       {error && (
@@ -863,10 +867,13 @@ export default function AdminDashboard() {
                     showSamplePreview={showSampleInEdit}
                     sampleImageUrl="/templates/sample-portrait.jpg"
                     textOverlays={editingTextOverlays}
+                    onTextOverlaysChange={setEditingTextOverlays}
+                    selectedTextId={selectedEditTextId}
+                    onSelectTextId={setSelectedEditTextId}
                   />
                 </div>
                 <div className="mt-2 text-[11px] text-[#71717A] text-center">
-                  Drag box to reposition • Drag corner/side handles to resize
+                  Drag box to move photo • Drag handles to resize • Click &amp; drag text to position anywhere
                 </div>
               </div>
 
@@ -981,74 +988,109 @@ export default function AdminDashboard() {
                       No custom text on this poster. Click &quot;Add Text&quot; to overlay titles, subtitles, or captions.
                     </div>
                   ) : (
-                    <div className="space-y-2.5 max-h-[180px] overflow-y-auto pr-1">
-                      {editingTextOverlays.map((textItem, idx) => (
-                        <div
-                          key={textItem.id || idx}
-                          className="bg-[#0D0D0D] border border-[#262626] rounded-xl p-2.5 space-y-2"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[10px] font-semibold text-[#A1A1AA]">
-                              Text #{idx + 1}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveEditText(idx)}
-                              className="text-[#71717A] hover:text-red-400 p-0.5 transition-colors"
-                              title="Remove text"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-
-                          <input
-                            type="text"
-                            value={textItem.text}
-                            onChange={(e) => handleUpdateEditText(idx, 'text', e.target.value)}
-                            placeholder="Enter text..."
-                            className="w-full bg-[#111111] border border-[#262626] rounded-lg px-2.5 py-1 text-xs text-white focus:border-white outline-none"
-                          />
-
-                          <div className="grid grid-cols-3 gap-2">
-                            <div>
-                              <label className="text-[10px] text-[#71717A] block mb-0.5">Size (px)</label>
-                              <input
-                                type="number"
-                                value={textItem.fontSize || 48}
-                                onChange={(e) =>
-                                  handleUpdateEditText(idx, 'fontSize', Math.max(12, Number(e.target.value)))
-                                }
-                                className="w-full bg-[#111111] border border-[#262626] rounded-lg px-2 py-1 text-xs text-white focus:border-white outline-none"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[10px] text-[#71717A] block mb-0.5">Color</label>
-                              <div className="flex items-center gap-1.5 bg-[#111111] border border-[#262626] rounded-lg px-1.5 py-0.5">
-                                <input
-                                  type="color"
-                                  value={textItem.color || '#ffffff'}
-                                  onChange={(e) => handleUpdateEditText(idx, 'color', e.target.value)}
-                                  className="h-5 w-5 border-0 bg-transparent cursor-pointer rounded"
-                                />
-                                <span className="text-[10px] font-mono text-[#A1A1AA] uppercase">
-                                  {textItem.color || '#FFF'}
+                    <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
+                      {editingTextOverlays.map((textItem, idx) => {
+                        const itemKey = textItem.id || `txt-${idx}`;
+                        const isSelected = selectedEditTextId === itemKey;
+                        return (
+                          <div
+                            key={itemKey}
+                            onClick={() => setSelectedEditTextId(itemKey)}
+                            className={`bg-[#0D0D0D] border rounded-xl p-2.5 space-y-2 transition-colors cursor-pointer ${
+                              isSelected
+                                ? 'border-sky-500 ring-1 ring-sky-500/50 bg-[#0f172a]/50'
+                                : 'border-[#262626] hover:border-neutral-700'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-semibold text-[#A1A1AA]">
+                                  Text #{idx + 1}
                                 </span>
+                                {isSelected && (
+                                  <span className="bg-sky-500/20 text-sky-400 text-[9px] px-1.5 py-0.5 rounded font-medium">
+                                    Selected
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveEditText(idx);
+                                }}
+                                className="text-[#71717A] hover:text-red-400 p-0.5 transition-colors"
+                                title="Remove text"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+
+                            <input
+                              type="text"
+                              value={textItem.text}
+                              onChange={(e) => handleUpdateEditText(idx, 'text', e.target.value)}
+                              onFocus={() => setSelectedEditTextId(itemKey)}
+                              placeholder="Enter text..."
+                              className="w-full bg-[#111111] border border-[#262626] rounded-lg px-2.5 py-1 text-xs text-white focus:border-white outline-none"
+                            />
+
+                            <div className="grid grid-cols-4 gap-2">
+                              <div>
+                                <label className="text-[10px] text-[#71717A] block mb-0.5">Size (px)</label>
+                                <input
+                                  type="number"
+                                  value={textItem.fontSize || 48}
+                                  onChange={(e) =>
+                                    handleUpdateEditText(idx, 'fontSize', Math.max(12, Number(e.target.value)))
+                                  }
+                                  onFocus={() => setSelectedEditTextId(itemKey)}
+                                  className="w-full bg-[#111111] border border-[#262626] rounded-lg px-2 py-1 text-xs text-white focus:border-white outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-[#71717A] block mb-0.5">Color</label>
+                                <div className="flex items-center gap-1 bg-[#111111] border border-[#262626] rounded-lg px-1.5 py-0.5 h-6">
+                                  <input
+                                    type="color"
+                                    value={textItem.color || '#ffffff'}
+                                    onChange={(e) => handleUpdateEditText(idx, 'color', e.target.value)}
+                                    onFocus={() => setSelectedEditTextId(itemKey)}
+                                    className="h-4 w-4 border-0 bg-transparent cursor-pointer rounded"
+                                  />
+                                  <span className="text-[9px] font-mono text-[#A1A1AA] uppercase truncate">
+                                    {textItem.color || '#FFF'}
+                                  </span>
+                                </div>
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-[#71717A] block mb-0.5">X Pos (px)</label>
+                                <input
+                                  type="number"
+                                  value={textItem.x}
+                                  onChange={(e) =>
+                                    handleUpdateEditText(idx, 'x', Math.max(0, Number(e.target.value)))
+                                  }
+                                  onFocus={() => setSelectedEditTextId(itemKey)}
+                                  className="w-full bg-[#111111] border border-[#262626] rounded-lg px-2 py-1 text-xs text-white focus:border-white outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-[#71717A] block mb-0.5">Y Pos (px)</label>
+                                <input
+                                  type="number"
+                                  value={textItem.y}
+                                  onChange={(e) =>
+                                    handleUpdateEditText(idx, 'y', Math.max(0, Number(e.target.value)))
+                                  }
+                                  onFocus={() => setSelectedEditTextId(itemKey)}
+                                  className="w-full bg-[#111111] border border-[#262626] rounded-lg px-2 py-1 text-xs text-white focus:border-white outline-none"
+                                />
                               </div>
                             </div>
-                            <div>
-                              <label className="text-[10px] text-[#71717A] block mb-0.5">Y Pos (px)</label>
-                              <input
-                                type="number"
-                                value={textItem.y}
-                                onChange={(e) =>
-                                  handleUpdateEditText(idx, 'y', Math.max(0, Number(e.target.value)))
-                                }
-                                className="w-full bg-[#111111] border border-[#262626] rounded-lg px-2 py-1 text-xs text-white focus:border-white outline-none"
-                              />
-                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -1126,11 +1168,23 @@ export default function AdminDashboard() {
               {/* Selected Image Visual Preview */}
               {/* Selected Image Visual Preview with Live Text Overlays */}
               <div className="lg:col-span-6 bg-[#0A0A0A] border border-[#262626] rounded-xl p-4 flex flex-col items-center justify-center space-y-3">
-                <div className="relative w-full max-h-[380px] rounded-lg overflow-hidden border border-[#262626] flex items-center justify-center bg-[#070707] p-1">
-                  <canvas
-                    ref={uploadCanvasRef}
-                    className="max-h-[360px] w-auto mx-auto rounded-lg object-contain block shadow-lg"
+                <div className="relative w-full rounded-lg overflow-hidden border border-[#262626] flex items-center justify-center bg-[#070707] p-1">
+                  <InteractiveAdminCanvas
+                    posterImageUrl={uploadPreviewUrl}
+                    posterWidth={uploadWidth}
+                    posterHeight={uploadHeight}
+                    photoArea={{ x: 0, y: 0, width: 0, height: 0, borderRadius: 0, layer: 'inside' }}
+                    onPhotoAreaChange={() => {}}
+                    showSamplePreview={false}
+                    disablePhotoArea={true}
+                    textOverlays={uploadTextOverlays}
+                    onTextOverlaysChange={setUploadTextOverlays}
+                    selectedTextId={selectedUploadTextId}
+                    onSelectTextId={setSelectedUploadTextId}
                   />
+                </div>
+                <div className="text-[11px] text-[#71717A] text-center">
+                  Click &amp; drag text on canvas to position anywhere
                 </div>
 
                 <div className="flex items-center justify-between w-full text-xs text-[#A1A1AA] px-1">
@@ -1257,77 +1311,113 @@ export default function AdminDashboard() {
                     </p>
                   ) : (
                     <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
-                      {uploadTextOverlays.map((textItem, idx) => (
-                        <div
-                          key={textItem.id || idx}
-                          className="bg-[#0D0D0D] border border-[#262626] rounded-xl p-3 space-y-2.5"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[11px] font-semibold text-[#A1A1AA]">
-                              Text #{idx + 1}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveUploadText(idx)}
-                              className="text-[#71717A] hover:text-red-400 p-1 transition-colors"
-                              title="Remove text"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-
-                          <div>
-                            <input
-                              type="text"
-                              value={textItem.text}
-                              onChange={(e) => handleUpdateUploadText(idx, 'text', e.target.value)}
-                              placeholder="e.g. KEYNOTE SPEAKER or CONFERENCE 2026"
-                              className="w-full bg-[#111111] border border-[#262626] rounded-lg px-2.5 py-1.5 text-xs text-white focus:border-white outline-none"
-                            />
-                          </div>
-
-                          <div className="grid grid-cols-3 gap-2">
-                            <div>
-                              <label className="text-[10px] text-[#71717A] block mb-0.5">Size (px)</label>
-                              <input
-                                type="number"
-                                value={textItem.fontSize || 48}
-                                onChange={(e) =>
-                                  handleUpdateUploadText(idx, 'fontSize', Math.max(12, Number(e.target.value)))
-                                }
-                                className="w-full bg-[#111111] border border-[#262626] rounded-lg px-2 py-1 text-xs text-white focus:border-white outline-none"
-                              />
+                      {uploadTextOverlays.map((textItem, idx) => {
+                        const itemKey = textItem.id || `txt-${idx}`;
+                        const isSelected = selectedUploadTextId === itemKey;
+                        return (
+                          <div
+                            key={itemKey}
+                            onClick={() => setSelectedUploadTextId(itemKey)}
+                            className={`bg-[#0D0D0D] border rounded-xl p-3 space-y-2.5 transition-colors cursor-pointer ${
+                              isSelected
+                                ? 'border-sky-500 ring-1 ring-sky-500/50 bg-[#0f172a]/50'
+                                : 'border-[#262626] hover:border-neutral-700'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[11px] font-semibold text-[#A1A1AA]">
+                                  Text #{idx + 1}
+                                </span>
+                                {isSelected && (
+                                  <span className="bg-sky-500/20 text-sky-400 text-[9px] px-1.5 py-0.5 rounded font-medium">
+                                    Selected
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveUploadText(idx);
+                                }}
+                                className="text-[#71717A] hover:text-red-400 p-1 transition-colors"
+                                title="Remove text"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
                             </div>
 
                             <div>
-                              <label className="text-[10px] text-[#71717A] block mb-0.5">Color</label>
-                              <div className="flex items-center gap-1.5 bg-[#111111] border border-[#262626] rounded-lg px-1.5 py-0.5">
+                              <input
+                                type="text"
+                                value={textItem.text}
+                                onChange={(e) => handleUpdateUploadText(idx, 'text', e.target.value)}
+                                onFocus={() => setSelectedUploadTextId(itemKey)}
+                                placeholder="e.g. KEYNOTE SPEAKER or CONFERENCE 2026"
+                                className="w-full bg-[#111111] border border-[#262626] rounded-lg px-2.5 py-1.5 text-xs text-white focus:border-white outline-none"
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-4 gap-2">
+                              <div>
+                                <label className="text-[10px] text-[#71717A] block mb-0.5">Size (px)</label>
                                 <input
-                                  type="color"
-                                  value={textItem.color || '#ffffff'}
-                                  onChange={(e) => handleUpdateUploadText(idx, 'color', e.target.value)}
-                                  className="h-6 w-6 border-0 bg-transparent cursor-pointer rounded"
+                                  type="number"
+                                  value={textItem.fontSize || 48}
+                                  onChange={(e) =>
+                                    handleUpdateUploadText(idx, 'fontSize', Math.max(12, Number(e.target.value)))
+                                  }
+                                  onFocus={() => setSelectedUploadTextId(itemKey)}
+                                  className="w-full bg-[#111111] border border-[#262626] rounded-lg px-2 py-1 text-xs text-white focus:border-white outline-none"
                                 />
-                                <span className="text-[11px] font-mono text-[#A1A1AA] uppercase">
-                                  {textItem.color || '#FFF'}
-                                </span>
+                              </div>
+
+                              <div>
+                                <label className="text-[10px] text-[#71717A] block mb-0.5">Color</label>
+                                <div className="flex items-center gap-1 bg-[#111111] border border-[#262626] rounded-lg px-1.5 py-0.5 h-6">
+                                  <input
+                                    type="color"
+                                    value={textItem.color || '#ffffff'}
+                                    onChange={(e) => handleUpdateUploadText(idx, 'color', e.target.value)}
+                                    onFocus={() => setSelectedUploadTextId(itemKey)}
+                                    className="h-4 w-4 border-0 bg-transparent cursor-pointer rounded"
+                                  />
+                                  <span className="text-[9px] font-mono text-[#A1A1AA] uppercase truncate">
+                                    {textItem.color || '#FFF'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="text-[10px] text-[#71717A] block mb-0.5">X Pos (px)</label>
+                                <input
+                                  type="number"
+                                  value={textItem.x}
+                                  onChange={(e) =>
+                                    handleUpdateUploadText(idx, 'x', Math.max(0, Number(e.target.value)))
+                                  }
+                                  onFocus={() => setSelectedUploadTextId(itemKey)}
+                                  className="w-full bg-[#111111] border border-[#262626] rounded-lg px-2 py-1 text-xs text-white focus:border-white outline-none"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="text-[10px] text-[#71717A] block mb-0.5">Y Pos (px)</label>
+                                <input
+                                  type="number"
+                                  value={textItem.y}
+                                  onChange={(e) =>
+                                    handleUpdateUploadText(idx, 'y', Math.max(0, Number(e.target.value)))
+                                  }
+                                  onFocus={() => setSelectedUploadTextId(itemKey)}
+                                  className="w-full bg-[#111111] border border-[#262626] rounded-lg px-2 py-1 text-xs text-white focus:border-white outline-none"
+                                />
                               </div>
                             </div>
-
-                            <div>
-                              <label className="text-[10px] text-[#71717A] block mb-0.5">Y Position (px)</label>
-                              <input
-                                type="number"
-                                value={textItem.y}
-                                onChange={(e) =>
-                                  handleUpdateUploadText(idx, 'y', Math.max(0, Number(e.target.value)))
-                                }
-                                className="w-full bg-[#111111] border border-[#262626] rounded-lg px-2 py-1 text-xs text-white focus:border-white outline-none"
-                              />
-                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -1391,6 +1481,33 @@ export default function AdminDashboard() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Floating Toast / Snackbar Notification */}
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl border backdrop-blur-md shadow-2xl text-xs sm:text-sm font-medium transition-all duration-300 animate-in fade-in slide-in-from-bottom-4 ${
+            toast.type === 'success'
+              ? 'bg-[#141414]/95 border-emerald-500/40 text-emerald-300 shadow-emerald-950/20'
+              : 'bg-[#141414]/95 border-red-500/40 text-red-300 shadow-red-950/20'
+          }`}
+        >
+          {toast.type === 'success' ? (
+            <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+          ) : (
+            <AlertCircle className="h-4 w-4 text-red-400 shrink-0" />
+          )}
+          <span className="text-white">{toast.message}</span>
+          <button
+            onClick={() => setToast(null)}
+            className="text-[#71717A] hover:text-white transition-colors ml-2 font-bold text-base leading-none p-0.5"
+            aria-label="Dismiss notification"
+          >
+            ×
+          </button>
         </div>
       )}
     </div>
