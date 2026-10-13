@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { PhotoArea, PosterTemplate, PosterTextOverlay } from '@/lib/types/template';
@@ -75,7 +75,8 @@ export default function AdminDashboard() {
   useEffect(() => {
     let isCancelled = false;
 
-    fetch('/api/templates', { cache: 'no-store' })
+    const cacheBust = `_t=${Date.now()}`;
+    fetch(`/api/templates?${cacheBust}`, { cache: 'no-store' })
       .then((res) => {
         if (!res.ok) throw new Error('Failed to fetch templates');
         return res.json();
@@ -110,13 +111,14 @@ export default function AdminDashboard() {
     };
   }, []);
 
-  const reloadTemplates = async () => {
+  const reloadTemplates = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
+      const cacheBust = `_t=${Date.now()}`;
       const [resTemplates, resCategories] = await Promise.all([
-        fetch('/api/templates', { cache: 'no-store' }),
-        fetch('/api/categories', { cache: 'no-store' }),
+        fetch(`/api/templates?${cacheBust}`, { cache: 'no-store' }),
+        fetch(`/api/categories?${cacheBust}`, { cache: 'no-store' }),
       ]);
       const dataTemplates = await resTemplates.json();
       const dataCategories = await resCategories.json();
@@ -129,7 +131,7 @@ export default function AdminDashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   // Redraw upload preview canvas when artwork or text overlays change
   useEffect(() => {
@@ -405,22 +407,34 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleDelete = async (id: string, title: string) => {
+  const handleDelete = async (id: string, title: string, slug?: string) => {
     if (!confirm(`Are you sure you want to delete "${title}"? This will clean up its stored image and configuration.`)) return;
 
     try {
       setDeletingId(id);
-      const res = await fetch(`/api/templates/${encodeURIComponent(id)}`, {
+      const searchParams = new URLSearchParams();
+      if (id) searchParams.set('id', id);
+      if (slug) searchParams.set('slug', slug);
+      const queryStr = searchParams.toString() ? `?${searchParams.toString()}` : '';
+      const endpoint = `/api/templates/${encodeURIComponent(slug || id)}${queryStr}`;
+
+      const res = await fetch(endpoint, {
         method: 'DELETE',
       });
       if (!res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Failed to delete template');
       }
-      setTemplates((prev) => prev.filter((t) => t.id !== id && t.slug !== id));
+
+      setTemplates((prev) =>
+        prev.filter((t) => t.id !== id && t.slug !== id && (!slug || (t.slug !== slug && t.id !== slug)))
+      );
+      setUploadSuccess(`Poster "${title}" deleted successfully.`);
+      setError(null);
       await reloadTemplates();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to delete template';
+      setError(msg);
       alert(msg);
     } finally {
       setDeletingId(null);
@@ -797,7 +811,7 @@ export default function AdminDashboard() {
                     size="sm"
                     className="h-9 w-9 p-0 text-[#71717A] hover:text-red-400 hover:bg-red-500/10 rounded-xl"
                     disabled={deletingId === template.id}
-                    onClick={() => handleDelete(template.id, template.title)}
+                    onClick={() => handleDelete(template.id, template.title, template.slug)}
                     title="Delete template"
                   >
                     <Trash2 className="h-4 w-4" />

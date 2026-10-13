@@ -246,41 +246,70 @@ export const templateDb = {
    * Fetches a single poster template by slug or unique ID.
    * Handles UUID check carefully so PostgreSQL does not throw a 22P02 syntax error.
    */
-  getBySlug: async (slugOrId: string): Promise<PosterTemplate | null> => {
+  getBySlug: async (
+    slugOrId: string,
+    hints?: { id?: string; slug?: string }
+  ): Promise<PosterTemplate | null> => {
     if (UNWANTED_DEFAULT_SLUGS.includes(slugOrId) || UNWANTED_DEFAULT_IDS.includes(slugOrId)) {
       return null;
     }
+
+    const candidateId = hints?.id || (UUID_REGEX.test(slugOrId) ? slugOrId : undefined);
+    const candidateSlug = hints?.slug || (!UUID_REGEX.test(slugOrId) ? slugOrId : undefined);
 
     const isConfigured = checkIsSupabaseAdminConfigured() || checkIsSupabaseConfigured();
     if (isConfigured) {
       try {
         const client = checkIsSupabaseAdminConfigured() ? supabaseAdmin : supabase;
-        const isUuid = UUID_REGEX.test(slugOrId);
-        let query = client.from('templates').select('*');
+        let data: Record<string, unknown> | null = null;
 
-        if (isUuid) {
-          query = query.or(`id.eq.${slugOrId},slug.eq.${slugOrId}`);
-        } else {
-          query = query.eq('slug', slugOrId);
+        // 1. Try querying by candidateId if it's a valid UUID
+        if (candidateId && UUID_REGEX.test(candidateId)) {
+          const res = await client.from('templates').select('*').eq('id', candidateId).maybeSingle();
+          if (!res.error && res.data) {
+            data = res.data;
+          }
         }
 
-        const { data, error } = await query.maybeSingle();
+        // 2. Try querying by candidateSlug
+        if (!data && candidateSlug) {
+          const res = await client.from('templates').select('*').eq('slug', candidateSlug).maybeSingle();
+          if (!res.error && res.data) {
+            data = res.data;
+          }
+        }
 
-        if (!error && data) {
+        // 3. Try slugOrId as slug
+        if (!data && slugOrId) {
+          const res = await client.from('templates').select('*').eq('slug', slugOrId).maybeSingle();
+          if (!res.error && res.data) {
+            data = res.data;
+          }
+        }
+
+        // 4. Try slugOrId as id if UUID
+        if (!data && slugOrId && UUID_REGEX.test(slugOrId) && slugOrId !== candidateId) {
+          const res = await client.from('templates').select('*').eq('id', slugOrId).maybeSingle();
+          if (!res.error && res.data) {
+            data = res.data;
+          }
+        }
+
+        if (data) {
           const photoArea = parseCanvasConfig(data.canvas_config);
           const template: PosterTemplate = {
             id: String(data.id),
-            title: data.title,
-            slug: data.slug,
-            description: data.description || '',
-            category: data.category || 'General',
+            title: String(data.title || ''),
+            slug: String(data.slug || ''),
+            description: String(data.description || ''),
+            category: String(data.category || 'General'),
             width: Number(data.width) || 1080,
             height: Number(data.height) || 1350,
-            posterImage: data.base_image_url,
+            posterImage: String(data.base_image_url || ''),
             photoArea,
             textOverlays: photoArea.textOverlays || [],
             sampleUserPhoto: '/templates/sample-portrait.jpg',
-            createdAt: data.created_at || new Date().toISOString(),
+            createdAt: String(data.created_at || new Date().toISOString()),
           };
 
           if (isUnwantedDefaultPoster(template)) {
@@ -295,14 +324,22 @@ export const templateDb = {
     }
 
     const list = readData().filter((t) => !isUnwantedDefaultPoster(t));
-    return list.find((t) => t.slug === slugOrId || t.id === slugOrId) || null;
+    return (
+      list.find(
+        (t) =>
+          t.slug === slugOrId ||
+          t.id === slugOrId ||
+          (candidateId && t.id === candidateId) ||
+          (candidateSlug && t.slug === candidateSlug)
+      ) || null
+    );
   },
 
   /**
    * Fetches template by unique database ID.
    */
   getById: async (id: string): Promise<PosterTemplate | null> => {
-    return templateDb.getBySlug(id);
+    return templateDb.getBySlug(id, { id });
   },
 
   /**
@@ -472,35 +509,128 @@ export const templateDb = {
   },
 
   /**
-   * Deletes a poster template from persistent storage (Supabase / local data.json).
+   * Deletes a poster template permanently from persistent storage (Supabase database and local file).
    * Ensures:
-   * 1. Resolves record from Supabase or local cache before deletion.
-   * 2. Confirms actual persistent deletion from database and local storage.
-   * 3. Associated image is removed only when appropriate and avoids deleting shared images.
-   * 4. Returns true on success or false if record was not found.
+   * 1. Resolves record across persistent sources and admin hints before deletion.
+   * 2. Permanently deletes the record from Supabase table 'templates' using verified returning queries.
+   * 3. Associated image is deleted from Supabase Storage only when not shared with other posters.
+   * 4. Completely removes from local data.json so no fallback can recreate it.
+   * 5. Returns true on success or false if record was not found.
    */
-  delete: async (slugOrId: string): Promise<boolean> => {
-    // 1. Locate template across persistent sources
+  delete: async (
+    slugOrId: string,
+    hints?: { id?: string; slug?: string }
+  ): Promise<boolean> => {
+    // 1. Locate template across persistent sources (Supabase and local data.json)
     const toDelete =
-      (await templateDb.getBySlug(slugOrId)) ||
-      readData().find((t) => t.id === slugOrId || t.slug === slugOrId) ||
+      (await templateDb.getBySlug(slugOrId, hints)) ||
+      (hints?.id ? await templateDb.getBySlug(hints.id) : null) ||
+      (hints?.slug ? await templateDb.getBySlug(hints.slug) : null) ||
+      readData().find(
+        (t) =>
+          t.id === slugOrId ||
+          t.slug === slugOrId ||
+          (hints?.id && t.id === hints.id) ||
+          (hints?.slug && t.slug === hints.slug)
+      ) ||
       null;
 
     const list = readData();
     const localIndex = list.findIndex(
-      (t) => t.id === slugOrId || t.slug === slugOrId || (toDelete && (t.id === toDelete.id || t.slug === toDelete.slug))
+      (t) =>
+        t.id === slugOrId ||
+        t.slug === slugOrId ||
+        (hints?.id && t.id === hints.id) ||
+        (hints?.slug && t.slug === hints.slug) ||
+        (toDelete && (t.id === toDelete.id || t.slug === toDelete.slug))
     );
 
-    // If template does not exist in either Supabase or local data
+    // If template does not exist in persistent sources or local cache
     if (!toDelete && localIndex === -1) {
       return false;
     }
 
-    const posterImage = toDelete?.posterImage || (localIndex !== -1 ? list[localIndex].posterImage : undefined);
-    const targetId = toDelete?.id || (localIndex !== -1 ? list[localIndex].id : slugOrId);
-    const targetSlug = toDelete?.slug || (localIndex !== -1 ? list[localIndex].slug : slugOrId);
+    const posterImage =
+      toDelete?.posterImage || (localIndex !== -1 ? list[localIndex].posterImage : undefined);
+    const targetId = toDelete?.id || hints?.id || (localIndex !== -1 ? list[localIndex].id : undefined);
+    const targetSlug = toDelete?.slug || hints?.slug || (localIndex !== -1 ? list[localIndex].slug : undefined);
 
-    // 2. Remove associated poster image only if not shared with other posters
+    // 2. Remove permanently from Supabase database first if configured
+    const isSupabaseActive = checkIsSupabaseAdminConfigured() || checkIsSupabaseConfigured();
+    if (isSupabaseActive) {
+      if (!checkIsSupabaseAdminConfigured()) {
+        throw new Error('Supabase admin credentials are required to permanently delete templates from database.');
+      }
+
+      let deletedRowsCount = 0;
+
+      // 2a. Delete by UUID if targetId or slugOrId is a UUID
+      const candidateUuid =
+        targetId && UUID_REGEX.test(targetId)
+          ? targetId
+          : UUID_REGEX.test(slugOrId)
+          ? slugOrId
+          : null;
+
+      if (candidateUuid) {
+        const { data, error } = await supabaseAdmin
+          .from('templates')
+          .delete()
+          .eq('id', candidateUuid)
+          .select('id, slug, base_image_url');
+
+        if (error) {
+          console.error('Error deleting template by ID from Supabase DB:', error);
+          throw new Error(`Failed to delete template from database: ${error.message}`);
+        }
+        if (Array.isArray(data)) {
+          deletedRowsCount += data.length;
+        }
+      }
+
+      // 2b. Delete by slug if targetSlug or candidate slug exists
+      const candidateSlug =
+        targetSlug || (!UUID_REGEX.test(slugOrId) ? slugOrId : null);
+
+      if (candidateSlug && deletedRowsCount === 0) {
+        const { data, error } = await supabaseAdmin
+          .from('templates')
+          .delete()
+          .eq('slug', candidateSlug)
+          .select('id, slug, base_image_url');
+
+        if (error) {
+          console.error('Error deleting template by slug from Supabase DB:', error);
+          throw new Error(`Failed to delete template from database: ${error.message}`);
+        }
+        if (Array.isArray(data)) {
+          deletedRowsCount += data.length;
+        }
+      }
+
+      // 2c. If still 0 rows deleted, attempt fallback with slugOrId directly
+      if (deletedRowsCount === 0 && slugOrId) {
+        if (UUID_REGEX.test(slugOrId) && slugOrId !== candidateUuid) {
+          const { data, error } = await supabaseAdmin
+            .from('templates')
+            .delete()
+            .eq('id', slugOrId)
+            .select('id, slug, base_image_url');
+          if (error) throw new Error(`Failed to delete template from database: ${error.message}`);
+          if (Array.isArray(data)) deletedRowsCount += data.length;
+        } else if (!UUID_REGEX.test(slugOrId) && slugOrId !== candidateSlug) {
+          const { data, error } = await supabaseAdmin
+            .from('templates')
+            .delete()
+            .eq('slug', slugOrId)
+            .select('id, slug, base_image_url');
+          if (error) throw new Error(`Failed to delete template from database: ${error.message}`);
+          if (Array.isArray(data)) deletedRowsCount += data.length;
+        }
+      }
+    }
+
+    // 3. Remove associated poster image only if not shared with other posters
     if (posterImage) {
       const isShared = await isPosterImageShared(posterImage, targetId, targetSlug);
       if (!isShared) {
@@ -508,40 +638,14 @@ export const templateDb = {
       }
     }
 
-    // 3. Remove from Supabase DB if configured
-    const isSupabaseActive = checkIsSupabaseAdminConfigured() || checkIsSupabaseConfigured();
-    if (isSupabaseActive) {
-      if (!checkIsSupabaseAdminConfigured()) {
-        throw new Error('Supabase admin credentials are required to permanently delete templates from database.');
-      }
-      let query = supabaseAdmin.from('templates').delete();
-      const isUuidTargetId = UUID_REGEX.test(targetId);
-      const isUuidSlugOrId = UUID_REGEX.test(slugOrId);
-
-      if (isUuidTargetId && targetSlug && targetSlug !== targetId) {
-        query = query.or(`id.eq.${targetId},slug.eq.${targetSlug}`);
-      } else if (isUuidTargetId) {
-        query = query.eq('id', targetId);
-      } else if (isUuidSlugOrId) {
-        query = query.eq('id', slugOrId);
-      } else if (targetSlug) {
-        query = query.eq('slug', targetSlug);
-      } else {
-        query = query.eq('slug', slugOrId);
-      }
-
-      const { error: dbError } = await query;
-      if (dbError) {
-        console.error('Error deleting template from Supabase DB:', dbError);
-        throw new Error(`Failed to delete template from database: ${dbError.message}`);
-      }
-    }
-
-    // 4. Remove from local data.json
+    // 4. Remove from local data.json persistent cache
     const filtered = list.filter((t) => {
       if (t.id === slugOrId || t.slug === slugOrId) return false;
       if (targetId && t.id === targetId) return false;
       if (targetSlug && t.slug === targetSlug) return false;
+      if (hints?.id && t.id === hints.id) return false;
+      if (hints?.slug && t.slug === hints.slug) return false;
+      if (toDelete && (t.id === toDelete.id || t.slug === toDelete.slug)) return false;
       return true;
     });
 

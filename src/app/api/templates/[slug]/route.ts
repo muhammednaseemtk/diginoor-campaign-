@@ -12,13 +12,25 @@ export async function GET(
   try {
     const { slug } = await params;
     const decodedSlug = decodeURIComponent(slug);
-    const template = (await templateDb.getBySlug(decodedSlug)) || (await templateDb.getById(decodedSlug));
+    const url = new URL(request.url);
+    const idHint = url.searchParams.get('id') || undefined;
+    const slugHint = url.searchParams.get('slug') || undefined;
+
+    const template =
+      (await templateDb.getBySlug(decodedSlug, { id: idHint, slug: slugHint })) ||
+      (idHint ? await templateDb.getById(idHint) : null);
     
     if (!template) {
       return NextResponse.json({ error: 'Template not found' }, { status: 404 });
     }
     
-    return NextResponse.json(template);
+    return NextResponse.json(template, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        Pragma: 'no-cache',
+        Expires: '0',
+      },
+    });
   } catch (error) {
     const rawMessage = error instanceof Error ? error.message : 'Failed to fetch template';
     const cleanMessage = rawMessage.replace(/sb_[A-Za-z0-9_-]+/g, '[REDACTED]');
@@ -71,7 +83,11 @@ export async function DELETE(
 
     const { slug } = await params;
     const decodedSlug = decodeURIComponent(slug);
-    const deleted = await templateDb.delete(decodedSlug);
+    const url = new URL(request.url);
+    const idHint = url.searchParams.get('id') || undefined;
+    const slugHint = url.searchParams.get('slug') || undefined;
+
+    const deleted = await templateDb.delete(decodedSlug, { id: idHint, slug: slugHint });
     
     if (!deleted) {
       return NextResponse.json({ error: 'Template not found' }, { status: 404 });
@@ -81,7 +97,9 @@ export async function DELETE(
       { success: true, message: 'Template deleted permanently' },
       {
         headers: {
-          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          Pragma: 'no-cache',
+          Expires: '0',
         },
       }
     );

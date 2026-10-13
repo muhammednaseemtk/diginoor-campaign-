@@ -143,11 +143,27 @@ export async function deletePosterFromStorage(imageUrl: string): Promise<void> {
   try {
     if (!imageUrl) return;
 
-    if (checkIsSupabaseAdminConfigured() && imageUrl.includes(`/storage/v1/object/public/${STORAGE_BUCKET}/`)) {
-      const parts = imageUrl.split(`/storage/v1/object/public/${STORAGE_BUCKET}/`);
-      if (parts[1]) {
-        await supabaseAdmin.storage.from(STORAGE_BUCKET).remove([decodeURIComponent(parts[1])]);
-        return;
+    if (checkIsSupabaseAdminConfigured()) {
+      if (imageUrl.includes(`/storage/v1/object/public/${STORAGE_BUCKET}/`)) {
+        const parts = imageUrl.split(`/storage/v1/object/public/${STORAGE_BUCKET}/`);
+        if (parts[1]) {
+          const cleanPath = decodeURIComponent(parts[1]).split('?')[0];
+          await supabaseAdmin.storage.from(STORAGE_BUCKET).remove([cleanPath]);
+          return;
+        }
+      } else if (imageUrl.includes('/storage/v1/object/public/')) {
+        const marker = '/storage/v1/object/public/';
+        const afterMarker = imageUrl.substring(imageUrl.indexOf(marker) + marker.length);
+        const slashIdx = afterMarker.indexOf('/');
+        if (slashIdx !== -1) {
+          const bucket = afterMarker.substring(0, slashIdx);
+          const rawPath = afterMarker.substring(slashIdx + 1);
+          const cleanPath = decodeURIComponent(rawPath).split('?')[0];
+          if (bucket && cleanPath) {
+            await supabaseAdmin.storage.from(bucket).remove([cleanPath]);
+            return;
+          }
+        }
       }
     }
 
