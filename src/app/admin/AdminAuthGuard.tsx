@@ -122,7 +122,7 @@ export function AdminAuthGuard({
                   <span>Authorized Personnel Login</span>
                 </div>
 
-                <form onSubmit={handleLogin} className="space-y-4">
+                <form onSubmit={handleLogin} className="space-y-4" autoComplete="off">
                   <div className="space-y-1.5">
                     <div className="relative">
                       <Input
@@ -131,8 +131,7 @@ export function AdminAuthGuard({
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="Enter Admin Password..."
                         className="h-11 rounded-xl bg-[#080808] border-[#2A2A2A] text-white pr-10 text-sm placeholder:text-[#52525B] focus-visible:border-white focus-visible:ring-0"
-                        autoComplete="current-password"
-                        autoFocus
+                        autoComplete="new-password"
                       />
                       <button
                         type="button"
