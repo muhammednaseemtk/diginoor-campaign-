@@ -6,16 +6,24 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 export function cleanEnvValue(val?: string | null): string {
   if (!val || typeof val !== 'string') return '';
   let str = val.trim();
+  // Strip outer backticks (`...`)
+  if (str.startsWith('`') && str.endsWith('`') && str.length >= 2) {
+    str = str.slice(1, -1).trim();
+  }
   // Strip outer quotes ("..." or '...')
   if (
-    (str.startsWith('"') && str.endsWith('"')) ||
-    (str.startsWith("'") && str.endsWith("'"))
+    (str.startsWith('"') && str.endsWith('"') && str.length >= 2) ||
+    (str.startsWith("'") && str.endsWith("'") && str.length >= 2)
   ) {
     str = str.slice(1, -1).trim();
   }
   // Strip escaped quotes (\"...\")
-  if (str.startsWith('\\"') && str.endsWith('\\"')) {
+  if (str.startsWith('\\"') && str.endsWith('\\"') && str.length >= 4) {
     str = str.slice(2, -2).trim();
+  }
+  // Strip accidental trailing semicolon
+  if (str.endsWith(';')) {
+    str = str.slice(0, -1).trim();
   }
   return str;
 }
@@ -55,125 +63,50 @@ export function getCleanEnvVar(names: string[]): string {
 }
 
 /**
- * Resolves the Supabase Project URL from any configured environment alias.
- * Ensures trailing slashes and quotes are cleanly stripped.
- *
- * CRITICAL VERCEL COMPILE/RUNTIME FIX:
- * Next.js (Turbopack/Webpack) inlines NEXT_PUBLIC_* variables into JavaScript bundles
- * at build time ONLY when referenced as direct static member expressions
- * (e.g. process.env.NEXT_PUBLIC_SUPABASE_URL).
- * Dynamic property bracket accesses (e.g. process.env[name]) are NOT inlined by the compiler.
- * In Vercel Serverless Function runtime (AWS Lambda), NEXT_PUBLIC_* variables are NOT
- * injected into Lambda process.env. Therefore, direct static member expressions are
- * required so Turbopack embeds the build-time value directly into server route bundles.
+ * Normalizes any valid Supabase Project URL or identifier:
+ * - Ensures https:// protocol is present
+ * - Resolves pure 20-character project reference IDs into https://<id>.supabase.co
+ * - Extracts project ref if user pasted dashboard URL (supabase.com/dashboard/project/<ref>)
+ * - Strips trailing slashes, quotes, and whitespace
  */
-export function getCleanSupabaseUrl(): string {
-  // 1. Direct static member accesses for build-time compiler inlining
-  const staticCandidate =
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    process.env.SUPABASE_URL ||
-    process.env.SUPABASE_PROJECT_URL ||
-    process.env.NEXT_PUBLIC_SUPABASE_PROJECT_URL ||
-    process.env.SUPABASE_API_URL ||
-    process.env.NEXT_PUBLIC_SUPABASE_API_URL;
+export function normalizeSupabaseUrl(url?: string | null): string {
+  if (!url || typeof url !== 'string') return '';
+  let cleaned = cleanEnvValue(url);
+  if (!cleaned) return '';
 
-  let raw = '';
-  if (staticCandidate && typeof staticCandidate === 'string' && staticCandidate.trim()) {
-    raw = cleanEnvValue(staticCandidate);
+  // Extract ref from Supabase dashboard URL if user accidentally pasted dashboard link
+  const dashboardMatch = cleaned.match(/supabase\.com\/dashboard\/project\/([a-zA-Z0-9_-]+)/i);
+  if (dashboardMatch && dashboardMatch[1]) {
+    cleaned = `https://${dashboardMatch[1]}.supabase.co`;
   }
 
-  // 2. Dynamic runtime lookup fallback across all process.env keys and aliases
-  if (!raw) {
-    raw = getCleanEnvVar([
-      'NEXT_PUBLIC_SUPABASE_URL',
-      'SUPABASE_URL',
-      'SUPABASE_PROJECT_URL',
-      'NEXT_PUBLIC_SUPABASE_PROJECT_URL',
-      'SUPABASE_API_URL',
-      'NEXT_PUBLIC_SUPABASE_API_URL',
-    ]);
+  // Handle pure 20-character project ref (standard Supabase project identifier)
+  if (/^[a-zA-Z0-9]{20}$/.test(cleaned)) {
+    cleaned = `https://${cleaned}.supabase.co`;
   }
 
-  if (!raw) return '';
-  return raw.replace(/\/+$/, '');
+  // Prepend https:// if protocol is missing (e.g., "xxxx.supabase.co")
+  if (!cleaned.startsWith('http://') && !cleaned.startsWith('https://')) {
+    cleaned = `https://${cleaned}`;
+  }
+
+  return cleaned.replace(/\/+$/, '');
 }
-
-/**
- * Resolves the server-only Supabase Secret Key (service role) from environment aliases.
- * NEVER exposed in browser/client contexts.
- */
-export function getCleanSupabaseSecretKey(): string {
-  if (typeof window !== 'undefined') return '';
-
-  // 1. Direct static member accesses
-  const staticCandidate =
-    process.env.SUPABASE_SECRET_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_KEY ||
-    process.env.SUPABASE_SECRET ||
-    process.env.SUPABASE_KEY ||
-    process.env.SERVICE_ROLE_KEY ||
-    process.env.SECRET_KEY;
-
-  if (staticCandidate && typeof staticCandidate === 'string' && staticCandidate.trim()) {
-    return cleanEnvValue(staticCandidate);
-  }
-
-  // 2. Dynamic runtime lookup fallback
-  return getCleanEnvVar([
-    'SUPABASE_SECRET_KEY',
-    'SUPABASE_SERVICE_ROLE_KEY',
-    'SUPABASE_SERVICE_KEY',
-    'SUPABASE_SECRET',
-    'SUPABASE_KEY',
-    'SERVICE_ROLE_KEY',
-    'SECRET_KEY',
-  ]);
-}
-
-/**
- * Resolves the public Supabase Publishable / Anon Key.
- */
-export function getCleanSupabasePublishableKey(): string {
-  // 1. Direct static member accesses for build-time compiler inlining
-  const staticCandidate =
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_KEY ||
-    process.env.SUPABASE_PUBLISHABLE_KEY ||
-    process.env.SUPABASE_ANON_KEY;
-
-  if (staticCandidate && typeof staticCandidate === 'string' && staticCandidate.trim()) {
-    return cleanEnvValue(staticCandidate);
-  }
-
-  // 2. Dynamic runtime lookup fallback
-  return getCleanEnvVar([
-    'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
-    'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-    'NEXT_PUBLIC_SUPABASE_KEY',
-    'SUPABASE_PUBLISHABLE_KEY',
-    'SUPABASE_ANON_KEY',
-  ]);
-}
-
-// Dedicated storage bucket for Diginoor posters (defaults to 'posters')
-export const STORAGE_BUCKET =
-  getCleanEnvVar(['SUPABASE_STORAGE_BUCKET', 'NEXT_PUBLIC_STORAGE_BUCKET']) || 'posters';
 
 /**
  * Checks if a given Supabase URL is placeholder or unconfigured
  */
 export function isPlaceholderUrl(url?: string): boolean {
   if (!url) return true;
-  const cleaned = cleanEnvValue(url).toLowerCase();
+  const normalized = normalizeSupabaseUrl(url).toLowerCase();
   return (
-    (!cleaned.startsWith('http://') && !cleaned.startsWith('https://')) ||
-    cleaned.includes('your-project-id') ||
-    cleaned.includes('your-supabase-url') ||
-    cleaned.includes('placeholder.supabase.co') ||
-    cleaned === 'http://' ||
-    cleaned === 'https://'
+    (!normalized.startsWith('http://') && !normalized.startsWith('https://')) ||
+    normalized.includes('your-project-id') ||
+    normalized.includes('your-supabase-url') ||
+    normalized.includes('placeholder.supabase.co') ||
+    normalized === 'http://' ||
+    normalized === 'https://' ||
+    normalized.includes('example.com')
   );
 }
 
@@ -191,6 +124,187 @@ export function isPlaceholderKey(key?: string): boolean {
     cleaned.length < 10
   );
 }
+
+/**
+ * Helper to validate a candidate Supabase URL string.
+ * Returns normalized URL if valid and non-placeholder, or empty string otherwise.
+ */
+function resolveValidSupabaseUrl(candidate?: string | null): string {
+  if (!candidate || typeof candidate !== 'string') return '';
+  const normalized = normalizeSupabaseUrl(candidate);
+  if (normalized && !isPlaceholderUrl(normalized)) {
+    return normalized;
+  }
+  return '';
+}
+
+/**
+ * Helper to validate a candidate Supabase Key string.
+ * Returns cleaned key if non-placeholder, or empty string otherwise.
+ */
+function resolveValidKey(candidate?: string | null): string {
+  if (!candidate || typeof candidate !== 'string') return '';
+  const cleaned = cleanEnvValue(candidate);
+  if (cleaned && !isPlaceholderKey(cleaned)) {
+    return cleaned;
+  }
+  return '';
+}
+
+/**
+ * Resolves the Supabase Project URL from any configured environment alias.
+ * Ensures trailing slashes and quotes are cleanly stripped, and normalizes valid URLs.
+ *
+ * CRITICAL VERCEL COMPILE/RUNTIME FIX:
+ * 1. Checks direct static member accesses for server runtime (SUPABASE_URL) FIRST.
+ *    In Next.js, direct static member expressions (process.env.SUPABASE_URL) are preserved
+ *    as runtime lookups on the server.
+ * 2. Never lets a build-time inlined NEXT_PUBLIC_* placeholder shadow a live server SUPABASE_URL.
+ *    Each candidate is individually validated with resolveValidSupabaseUrl() so placeholders
+ *    are rejected and fallbacks are evaluated.
+ * 3. Falls back to dynamic runtime lookup across all process.env aliases.
+ */
+export function getCleanSupabaseUrl(): string {
+  // 1. Direct static member accesses: Server variables checked FIRST, followed by public aliases
+  const resolved =
+    resolveValidSupabaseUrl(process.env.SUPABASE_URL) ||
+    resolveValidSupabaseUrl(process.env.SUPABASE_PROJECT_URL) ||
+    resolveValidSupabaseUrl(process.env.SUPABASE_API_URL) ||
+    resolveValidSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL) ||
+    resolveValidSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_PROJECT_URL) ||
+    resolveValidSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_API_URL);
+
+  if (resolved) return resolved;
+
+  // 2. Dynamic runtime lookup fallback across all process.env keys and aliases
+  if (typeof process !== 'undefined' && process.env) {
+    const candidates = [
+      'SUPABASE_URL',
+      'SUPABASE_PROJECT_URL',
+      'SUPABASE_API_URL',
+      'NEXT_PUBLIC_SUPABASE_URL',
+      'NEXT_PUBLIC_SUPABASE_PROJECT_URL',
+      'NEXT_PUBLIC_SUPABASE_API_URL',
+    ];
+
+    for (const key of candidates) {
+      const valid = resolveValidSupabaseUrl(process.env[key]);
+      if (valid) return valid;
+    }
+
+    const allKeys = Object.keys(process.env);
+    for (const targetKey of candidates) {
+      const lowerTarget = targetKey.toLowerCase();
+      const matched = allKeys.find((k) => k.trim().toLowerCase() === lowerTarget);
+      if (matched) {
+        const valid = resolveValidSupabaseUrl(process.env[matched]);
+        if (valid) return valid;
+      }
+    }
+  }
+
+  return '';
+}
+
+/**
+ * Resolves the server-only Supabase Secret Key (service role) from environment aliases.
+ * NEVER exposed in browser/client contexts.
+ */
+export function getCleanSupabaseSecretKey(): string {
+  if (typeof window !== 'undefined') return '';
+
+  // 1. Direct static member accesses
+  const resolved =
+    resolveValidKey(process.env.SUPABASE_SECRET_KEY) ||
+    resolveValidKey(process.env.SUPABASE_SERVICE_ROLE_KEY) ||
+    resolveValidKey(process.env.SUPABASE_SERVICE_KEY) ||
+    resolveValidKey(process.env.SUPABASE_SECRET) ||
+    resolveValidKey(process.env.SUPABASE_KEY) ||
+    resolveValidKey(process.env.SERVICE_ROLE_KEY) ||
+    resolveValidKey(process.env.SECRET_KEY);
+
+  if (resolved) return resolved;
+
+  // 2. Dynamic runtime lookup fallback
+  if (typeof process !== 'undefined' && process.env) {
+    const candidates = [
+      'SUPABASE_SECRET_KEY',
+      'SUPABASE_SERVICE_ROLE_KEY',
+      'SUPABASE_SERVICE_KEY',
+      'SUPABASE_SECRET',
+      'SUPABASE_KEY',
+      'SERVICE_ROLE_KEY',
+      'SECRET_KEY',
+    ];
+
+    for (const key of candidates) {
+      const valid = resolveValidKey(process.env[key]);
+      if (valid) return valid;
+    }
+
+    const allKeys = Object.keys(process.env);
+    for (const targetKey of candidates) {
+      const lowerTarget = targetKey.toLowerCase();
+      const matched = allKeys.find((k) => k.trim().toLowerCase() === lowerTarget);
+      if (matched) {
+        const valid = resolveValidKey(process.env[matched]);
+        if (valid) return valid;
+      }
+    }
+  }
+
+  return '';
+}
+
+/**
+ * Resolves the public Supabase Publishable / Anon Key.
+ */
+export function getCleanSupabasePublishableKey(): string {
+  // 1. Direct static member accesses for build-time compiler inlining
+  const resolved =
+    resolveValidKey(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) ||
+    resolveValidKey(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) ||
+    resolveValidKey(process.env.NEXT_PUBLIC_SUPABASE_KEY) ||
+    resolveValidKey(process.env.SUPABASE_PUBLISHABLE_KEY) ||
+    resolveValidKey(process.env.SUPABASE_ANON_KEY);
+
+  if (resolved) return resolved;
+
+  // 2. Dynamic runtime lookup fallback
+  if (typeof process !== 'undefined' && process.env) {
+    const candidates = [
+      'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+      'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+      'NEXT_PUBLIC_SUPABASE_KEY',
+      'SUPABASE_PUBLISHABLE_KEY',
+      'SUPABASE_ANON_KEY',
+    ];
+
+    for (const key of candidates) {
+      const valid = resolveValidKey(process.env[key]);
+      if (valid) return valid;
+    }
+
+    const allKeys = Object.keys(process.env);
+    for (const targetKey of candidates) {
+      const lowerTarget = targetKey.toLowerCase();
+      const matched = allKeys.find((k) => k.trim().toLowerCase() === lowerTarget);
+      if (matched) {
+        const valid = resolveValidKey(process.env[matched]);
+        if (valid) return valid;
+      }
+    }
+  }
+
+  return '';
+}
+
+// Dedicated storage bucket for Diginoor posters (defaults to 'posters')
+export const STORAGE_BUCKET =
+  cleanEnvValue(process.env.SUPABASE_STORAGE_BUCKET) ||
+  cleanEnvValue(process.env.NEXT_PUBLIC_STORAGE_BUCKET) ||
+  getCleanEnvVar(['SUPABASE_STORAGE_BUCKET', 'NEXT_PUBLIC_STORAGE_BUCKET']) ||
+  'posters';
 
 /**
  * Dynamically checks whether the public Supabase client or server client is configured.
@@ -251,6 +365,18 @@ export function getSupabaseAdminConfigStatus(): {
   const key = getCleanSupabaseSecretKey();
   const hasValidUrl = Boolean(url && !isPlaceholderUrl(url));
   const hasValidKey = Boolean(key && !isPlaceholderKey(key));
+
+  // Safe diagnostic logging: booleans only, NEVER log credentials, URLs, or secrets
+  console.log('[Supabase Admin Diagnostic]', {
+    hasSupabaseUrl: Boolean(process.env.SUPABASE_URL?.trim()),
+    hasNextPublicUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()),
+    hasSecretKey: Boolean(
+      process.env.SUPABASE_SECRET_KEY?.trim() || process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+    ),
+    resolvedUrlValid: hasValidUrl,
+    resolvedKeyValid: hasValidKey,
+    isFullyConfigured: hasValidUrl && hasValidKey,
+  });
 
   return {
     isConfigured: hasValidUrl && hasValidKey,
