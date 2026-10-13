@@ -3,8 +3,9 @@
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { PhotoArea, PosterTemplate } from '@/lib/types/template';
+import { PhotoArea, PosterTemplate, PosterTextOverlay } from '@/lib/types/template';
 import { InteractiveAdminCanvas } from '@/components/admin/InteractiveAdminCanvas';
+import { renderPosterToCanvas } from '@/lib/image-processor';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
@@ -19,6 +20,9 @@ import {
   PlusCircle,
   Sparkles,
   AlertCircle,
+  FolderPlus,
+  Type,
+  Plus,
 } from 'lucide-react';
 
 export default function AdminDashboard() {
@@ -28,9 +32,27 @@ export default function AdminDashboard() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
 
+  // Categories state
+  const [categories, setCategories] = useState<string[]>([
+    'Conferences & Events',
+    'Corporate & Awards',
+    'Concerts & Music',
+    'Sports & Fitness',
+    'Celebrations',
+    'Fun & Retro',
+    'Ready-Made Posters',
+    'Other',
+  ]);
+  const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false);
+  const [showInlineCategoryInput, setShowInlineCategoryInput] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [creatingCategory, setCreatingCategory] = useState(false);
+  const [categoryModalError, setCategoryModalError] = useState<string | null>(null);
+
   // Editing existing template photo slot modal
   const [editingTemplate, setEditingTemplate] = useState<PosterTemplate | null>(null);
   const [editingPhotoArea, setEditingPhotoArea] = useState<PhotoArea | null>(null);
+  const [editingTextOverlays, setEditingTextOverlays] = useState<PosterTextOverlay[]>([]);
   const [savingEdit, setSavingEdit] = useState(false);
   const [showSampleInEdit, setShowSampleInEdit] = useState(false);
 
@@ -43,10 +65,12 @@ export default function AdminDashboard() {
   const [uploadDescription, setUploadDescription] = useState('');
   const [uploadWidth, setUploadWidth] = useState(1080);
   const [uploadHeight, setUploadHeight] = useState(1350);
+  const [uploadTextOverlays, setUploadTextOverlays] = useState<PosterTextOverlay[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadModalError, setUploadModalError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadCanvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     let isCancelled = false;
@@ -72,6 +96,15 @@ export default function AdminDashboard() {
         }
       });
 
+    fetch('/api/categories', { cache: 'no-store' })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!isCancelled && Array.isArray(data?.categories)) {
+          setCategories(data.categories);
+        }
+      })
+      .catch(() => {});
+
     return () => {
       isCancelled = true;
     };
@@ -81,16 +114,173 @@ export default function AdminDashboard() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch('/api/templates', { cache: 'no-store' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Failed to fetch templates');
-      if (Array.isArray(data)) setTemplates(data);
+      const [resTemplates, resCategories] = await Promise.all([
+        fetch('/api/templates', { cache: 'no-store' }),
+        fetch('/api/categories', { cache: 'no-store' }),
+      ]);
+      const dataTemplates = await resTemplates.json();
+      const dataCategories = await resCategories.json();
+      if (!resTemplates.ok) throw new Error(dataTemplates?.error || 'Failed to fetch templates');
+      if (Array.isArray(dataTemplates)) setTemplates(dataTemplates);
+      if (Array.isArray(dataCategories?.categories)) setCategories(dataCategories.categories);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error loading templates';
       setError(msg);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Redraw upload preview canvas when artwork or text overlays change
+  useEffect(() => {
+    if (!uploadPreviewUrl || !uploadCanvasRef.current) return;
+    const canvas = uploadCanvasRef.current;
+    const img = new window.Image();
+    img.src = uploadPreviewUrl;
+    img.onload = () => {
+      renderPosterToCanvas({
+        posterImage: img,
+        photoArea: {
+          x: 0,
+          y: 0,
+          width: 0,
+          height: 0,
+          borderRadius: 0,
+          layer: 'inside',
+        },
+        canvas,
+        showPlaceholderGuide: false,
+        textOverlays: uploadTextOverlays,
+      });
+    };
+  }, [uploadPreviewUrl, uploadTextOverlays, uploadWidth, uploadHeight]);
+
+  /**
+   * Creates a new category persistently
+   */
+  const handleCreateCategory = async (nameOverride?: string) => {
+    const targetName = (nameOverride ?? newCategoryName).trim();
+    if (!targetName) {
+      setCategoryModalError('Please enter a category name.');
+      return;
+    }
+
+    // Check duplicate (case-insensitive)
+    const existing = categories.find((c) => c.toLowerCase() === targetName.toLowerCase());
+    if (existing) {
+      setUploadCategory(existing);
+      setCategoryModalError(`Category "${existing}" already exists. Selected it for your poster.`);
+      setTimeout(() => {
+        setCategoryModalError(null);
+        setShowCreateCategoryModal(false);
+        setShowInlineCategoryInput(false);
+        setNewCategoryName('');
+      }, 1500);
+      return;
+    }
+
+    try {
+      setCreatingCategory(true);
+      setCategoryModalError(null);
+      const res = await fetch('/api/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: targetName }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to create category');
+      }
+
+      const createdCat = data.category || targetName;
+      if (Array.isArray(data.categories)) {
+        setCategories(data.categories);
+      } else {
+        setCategories((prev) => (prev.includes(createdCat) ? prev : [...prev, createdCat]));
+      }
+
+      setUploadCategory(createdCat);
+      setUploadSuccess(`Category "${createdCat}" created successfully!`);
+      setShowCreateCategoryModal(false);
+      setShowInlineCategoryInput(false);
+      setNewCategoryName('');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error creating category';
+      setCategoryModalError(msg);
+    } finally {
+      setCreatingCategory(false);
+    }
+  };
+
+  /**
+   * Text overlays management in upload modal
+   */
+  const handleAddUploadText = () => {
+    const newY = Math.round(uploadHeight * 0.85);
+    const newX = Math.round(uploadWidth / 2);
+    setUploadTextOverlays((prev) => [
+      ...prev,
+      {
+        id: `txt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        text: 'Custom Poster Text',
+        fontSize: Math.max(32, Math.round(uploadHeight * 0.04)),
+        color: '#ffffff',
+        x: newX,
+        y: newY,
+        textAlign: 'center',
+        fontWeight: 'bold',
+        shadowColor: 'rgba(0, 0, 0, 0.85)',
+        shadowBlur: 8,
+      },
+    ]);
+  };
+
+  const handleUpdateUploadText = (index: number, field: keyof PosterTextOverlay, value: string | number) => {
+    setUploadTextOverlays((prev) => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], [field]: value };
+      return copy;
+    });
+  };
+
+  const handleRemoveUploadText = (index: number) => {
+    setUploadTextOverlays((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  /**
+   * Text overlays management in edit existing modal
+   */
+  const handleAddEditText = () => {
+    if (!editingTemplate) return;
+    const newY = Math.round(editingTemplate.height * 0.85);
+    const newX = Math.round(editingTemplate.width / 2);
+    setEditingTextOverlays((prev) => [
+      ...prev,
+      {
+        id: `txt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        text: 'Custom Poster Text',
+        fontSize: Math.max(32, Math.round(editingTemplate.height * 0.04)),
+        color: '#ffffff',
+        x: newX,
+        y: newY,
+        textAlign: 'center',
+        fontWeight: 'bold',
+        shadowColor: 'rgba(0, 0, 0, 0.85)',
+        shadowBlur: 8,
+      },
+    ]);
+  };
+
+  const handleUpdateEditText = (index: number, field: keyof PosterTextOverlay, value: string | number) => {
+    setEditingTextOverlays((prev) => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], [field]: value };
+      return copy;
+    });
+  };
+
+  const handleRemoveEditText = (index: number) => {
+    setEditingTextOverlays((prev) => prev.filter((_, i) => i !== index));
   };
 
   /**
@@ -115,8 +305,9 @@ export default function AdminDashboard() {
       .replace(/[-_]+/g, ' ')
       .replace(/\b\w/g, (c) => c.toUpperCase());
     setUploadTitle(cleanTitle);
-    setUploadCategory('Conferences & Events');
+    setUploadCategory(categories[0] || 'Conferences & Events');
     setUploadDescription('');
+    setUploadTextOverlays([]);
 
     // Generate local preview URL & measure natural image dimensions
     const objectUrl = URL.createObjectURL(file);
@@ -148,6 +339,8 @@ export default function AdminDashboard() {
     setUploadModalOpen(false);
     setUploadFile(null);
     setUploadPreviewUrl(null);
+    setUploadTextOverlays([]);
+    setShowInlineCategoryInput(false);
     setUploadModalError(null);
   };
 
@@ -177,6 +370,10 @@ export default function AdminDashboard() {
       formData.append('width', String(uploadWidth));
       formData.append('height', String(uploadHeight));
 
+      if (uploadTextOverlays.length > 0) {
+        formData.append('textOverlays', JSON.stringify(uploadTextOverlays));
+      }
+
       const res = await fetch('/api/templates', {
         method: 'POST',
         body: formData,
@@ -198,6 +395,8 @@ export default function AdminDashboard() {
       setUploadModalOpen(false);
       setUploadFile(null);
       setUploadPreviewUrl(null);
+      setUploadTextOverlays([]);
+      setShowInlineCategoryInput(false);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error uploading poster';
       setUploadModalError(msg);
@@ -237,19 +436,21 @@ export default function AdminDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           photoArea: editingPhotoArea,
+          textOverlays: editingTextOverlays,
         }),
       });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || 'Failed to save photo area configuration');
+        throw new Error(data.error || 'Failed to save configuration');
       }
       const updated = await res.json();
       setTemplates((prev) =>
         prev.map((t) => (t.id === updated.id || t.slug === updated.slug ? updated : t))
       );
-      setUploadSuccess(`Photo area for "${updated.title}" was saved successfully!`);
+      setUploadSuccess(`Configuration and text for "${updated.title}" saved successfully!`);
       setEditingTemplate(null);
       setEditingPhotoArea(null);
+      setEditingTextOverlays([]);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error updating template';
       alert(msg);
@@ -289,6 +490,20 @@ export default function AdminDashboard() {
             <span>Upload Poster</span>
           </Button>
 
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setCategoryModalError(null);
+              setNewCategoryName('');
+              setShowCreateCategoryModal(true);
+            }}
+            className="rounded-xl border-[#262626] bg-[#0D0D0D] text-xs font-medium text-[#A1A1AA] hover:text-white hover:bg-[#1A1A1A] h-9"
+          >
+            <FolderPlus className="mr-1.5 h-3.5 w-3.5" />
+            <span>Create Category</span>
+          </Button>
+
           <Link href="/admin/create">
             <Button
               variant="outline"
@@ -312,6 +527,103 @@ export default function AdminDashboard() {
           </Button>
         </div>
       </div>
+
+      {/* Create Category Modal */}
+      {showCreateCategoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+          <div className="bg-[#111111] border border-[#262626] rounded-2xl w-full max-w-md overflow-hidden shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-[#262626]">
+              <div className="flex items-center gap-2">
+                <FolderPlus className="h-5 w-5 text-white" />
+                <h3 className="text-base font-bold text-white">Create New Category</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowCreateCategoryModal(false);
+                  setNewCategoryName('');
+                  setCategoryModalError(null);
+                }}
+                className="text-[#71717A] hover:text-white text-xl font-bold p-1 leading-none transition-colors"
+              >
+                ×
+              </button>
+            </div>
+
+            <p className="text-xs text-[#A1A1AA]">
+              Add a new category for organizing posters. Newly created categories will immediately appear in the poster dropdown and on user-facing filter tabs.
+            </p>
+
+            {categoryModalError && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{categoryModalError}</span>
+              </div>
+            )}
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleCreateCategory();
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="text-xs font-semibold text-white block mb-1.5">
+                  Category Name <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder="e.g. Political Campaigns, Hackathons, Weddings"
+                  autoFocus
+                  className="w-full bg-[#0D0D0D] border border-[#262626] rounded-xl px-3.5 py-2 text-sm text-white placeholder:text-[#52525B] focus:border-white outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-medium text-[#71717A] block mb-1">
+                  Existing Categories:
+                </label>
+                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                  {categories.map((c) => (
+                    <span
+                      key={c}
+                      className="px-2 py-0.5 rounded-md bg-[#0D0D0D] border border-[#262626] text-[11px] text-[#A1A1AA]"
+                    >
+                      {c}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-[#262626]">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setShowCreateCategoryModal(false);
+                    setNewCategoryName('');
+                    setCategoryModalError(null);
+                  }}
+                  className="border-[#262626] text-white hover:bg-[#1A1A1A] rounded-xl text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={creatingCategory || !newCategoryName.trim()}
+                  className="bg-white text-black hover:bg-neutral-200 font-semibold rounded-xl text-xs"
+                >
+                  {creatingCategory ? 'Creating...' : 'Create Category'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Success Notification */}
       {uploadSuccess && (
@@ -464,6 +776,7 @@ export default function AdminDashboard() {
                     onClick={() => {
                       setEditingTemplate(template);
                       setEditingPhotoArea({ ...template.photoArea });
+                      setEditingTextOverlays(template.textOverlays || template.photoArea.textOverlays || []);
                       setShowSampleInEdit(false);
                     }}
                     className="flex-1 rounded-xl text-xs font-semibold border-[#262626] bg-[#0D0D0D] text-white hover:bg-[#1A1A1A] transition-colors"
@@ -535,6 +848,7 @@ export default function AdminDashboard() {
                     onPhotoAreaChange={(newArea) => setEditingPhotoArea(newArea)}
                     showSamplePreview={showSampleInEdit}
                     sampleImageUrl="/templates/sample-portrait.jpg"
+                    textOverlays={editingTextOverlays}
                   />
                 </div>
                 <div className="mt-2 text-[11px] text-[#71717A] text-center">
@@ -629,6 +943,102 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
+                {/* Poster Text Overlays Editor */}
+                <div className="space-y-3 pt-2 border-t border-[#262626]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-white flex items-center gap-1.5">
+                      <Type className="h-3.5 w-3.5 text-white" />
+                      <span>Poster Text Overlays</span>
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAddEditText}
+                      className="h-7 text-xs rounded-lg px-2.5 border-[#262626] bg-[#0D0D0D] text-white hover:bg-[#1A1A1A]"
+                    >
+                      <Plus className="mr-1 h-3 w-3" />
+                      Add Text
+                    </Button>
+                  </div>
+
+                  {editingTextOverlays.length === 0 ? (
+                    <div className="text-[11px] text-[#71717A] bg-[#0D0D0D] p-2.5 rounded-xl border border-[#262626]">
+                      No custom text on this poster. Click &quot;Add Text&quot; to overlay titles, subtitles, or captions.
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5 max-h-[180px] overflow-y-auto pr-1">
+                      {editingTextOverlays.map((textItem, idx) => (
+                        <div
+                          key={textItem.id || idx}
+                          className="bg-[#0D0D0D] border border-[#262626] rounded-xl p-2.5 space-y-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-semibold text-[#A1A1AA]">
+                              Text #{idx + 1}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveEditText(idx)}
+                              className="text-[#71717A] hover:text-red-400 p-0.5 transition-colors"
+                              title="Remove text"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+
+                          <input
+                            type="text"
+                            value={textItem.text}
+                            onChange={(e) => handleUpdateEditText(idx, 'text', e.target.value)}
+                            placeholder="Enter text..."
+                            className="w-full bg-[#111111] border border-[#262626] rounded-lg px-2.5 py-1 text-xs text-white focus:border-white outline-none"
+                          />
+
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <label className="text-[10px] text-[#71717A] block mb-0.5">Size (px)</label>
+                              <input
+                                type="number"
+                                value={textItem.fontSize || 48}
+                                onChange={(e) =>
+                                  handleUpdateEditText(idx, 'fontSize', Math.max(12, Number(e.target.value)))
+                                }
+                                className="w-full bg-[#111111] border border-[#262626] rounded-lg px-2 py-1 text-xs text-white focus:border-white outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-[#71717A] block mb-0.5">Color</label>
+                              <div className="flex items-center gap-1.5 bg-[#111111] border border-[#262626] rounded-lg px-1.5 py-0.5">
+                                <input
+                                  type="color"
+                                  value={textItem.color || '#ffffff'}
+                                  onChange={(e) => handleUpdateEditText(idx, 'color', e.target.value)}
+                                  className="h-5 w-5 border-0 bg-transparent cursor-pointer rounded"
+                                />
+                                <span className="text-[10px] font-mono text-[#A1A1AA] uppercase">
+                                  {textItem.color || '#FFF'}
+                                </span>
+                              </div>
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-[#71717A] block mb-0.5">Y Pos (px)</label>
+                              <input
+                                type="number"
+                                value={textItem.y}
+                                onChange={(e) =>
+                                  handleUpdateEditText(idx, 'y', Math.max(0, Number(e.target.value)))
+                                }
+                                className="w-full bg-[#111111] border border-[#262626] rounded-lg px-2 py-1 text-xs text-white focus:border-white outline-none"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <div className="bg-[#0D0D0D] border border-[#262626] rounded-xl p-3 text-[11px] text-[#A1A1AA] space-y-1">
                   <div className="font-semibold text-white">Summary for this Poster:</div>
                   <div>Poster Size: {editingTemplate.width} × {editingTemplate.height} px</div>
@@ -700,13 +1110,12 @@ export default function AdminDashboard() {
             {/* Modal Body */}
             <div className="p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start overflow-y-auto flex-1">
               {/* Selected Image Visual Preview */}
+              {/* Selected Image Visual Preview with Live Text Overlays */}
               <div className="lg:col-span-6 bg-[#0A0A0A] border border-[#262626] rounded-xl p-4 flex flex-col items-center justify-center space-y-3">
-                <div className="relative w-full max-h-[380px] rounded-lg overflow-hidden border border-[#262626] flex items-center justify-center bg-[#070707]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={uploadPreviewUrl}
-                    alt={uploadTitle || 'Poster Preview'}
-                    className="object-contain max-h-[360px] w-auto mx-auto rounded-lg"
+                <div className="relative w-full max-h-[380px] rounded-lg overflow-hidden border border-[#262626] flex items-center justify-center bg-[#070707] p-1">
+                  <canvas
+                    ref={uploadCanvasRef}
+                    className="max-h-[360px] w-auto mx-auto rounded-lg object-contain block shadow-lg"
                   />
                 </div>
 
@@ -754,24 +1163,159 @@ export default function AdminDashboard() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-white">
-                    Category
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-white">
+                      Category
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowInlineCategoryInput(!showInlineCategoryInput)}
+                      className="text-[11px] text-[#A1A1AA] hover:text-white flex items-center gap-1 font-medium transition-colors"
+                    >
+                      <Plus className="h-3 w-3" />
+                      <span>{showInlineCategoryInput ? 'Cancel' : 'New Category'}</span>
+                    </button>
+                  </div>
+
+                  {showInlineCategoryInput && (
+                    <div className="flex items-center gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={newCategoryName}
+                        onChange={(e) => setNewCategoryName(e.target.value)}
+                        placeholder="Enter new category name..."
+                        className="flex-1 bg-[#0D0D0D] border border-[#262626] rounded-xl px-3 py-1.5 text-xs text-white focus:border-white outline-none"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleCreateCategory();
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={creatingCategory || !newCategoryName.trim()}
+                        onClick={() => handleCreateCategory()}
+                        className="h-8 rounded-xl bg-white text-black hover:bg-neutral-200 text-xs font-semibold px-3"
+                      >
+                        {creatingCategory ? 'Adding...' : 'Add'}
+                      </Button>
+                    </div>
+                  )}
+
                   <select
                     value={uploadCategory}
                     onChange={(e) => setUploadCategory(e.target.value)}
                     disabled={uploading}
                     className="w-full bg-[#0D0D0D] border border-[#262626] rounded-xl px-3 py-2 text-xs text-white focus:border-white outline-none"
                   >
-                    <option value="Conferences & Events">Conferences &amp; Events</option>
-                    <option value="Corporate & Awards">Corporate &amp; Awards</option>
-                    <option value="Concerts & Music">Concerts &amp; Music</option>
-                    <option value="Sports & Fitness">Sports &amp; Fitness</option>
-                    <option value="Celebrations">Celebrations</option>
-                    <option value="Fun & Retro">Fun &amp; Retro</option>
-                    <option value="Ready-Made Posters">Ready-Made Posters</option>
-                    <option value="Other">Other</option>
+                    {categories.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
                   </select>
+                </div>
+
+                {/* Text on Poster Section */}
+                <div className="space-y-3 pt-2 border-t border-[#262626]">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-white flex items-center gap-1.5">
+                      <Type className="h-3.5 w-3.5 text-white" />
+                      <span>Add Text to Poster (Optional)</span>
+                    </label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAddUploadText}
+                      className="h-7 text-xs border-[#262626] bg-[#0D0D0D] text-white hover:bg-[#1A1A1A] rounded-lg"
+                    >
+                      <Plus className="mr-1 h-3 w-3" />
+                      <span>Add Text</span>
+                    </Button>
+                  </div>
+
+                  {uploadTextOverlays.length === 0 ? (
+                    <p className="text-[11px] text-[#71717A]">
+                      No custom text added. Click &quot;Add Text&quot; to overlay titles, subtitles, or captions directly onto this poster.
+                    </p>
+                  ) : (
+                    <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
+                      {uploadTextOverlays.map((textItem, idx) => (
+                        <div
+                          key={textItem.id || idx}
+                          className="bg-[#0D0D0D] border border-[#262626] rounded-xl p-3 space-y-2.5"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-semibold text-[#A1A1AA]">
+                              Text #{idx + 1}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveUploadText(idx)}
+                              className="text-[#71717A] hover:text-red-400 p-1 transition-colors"
+                              title="Remove text"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+
+                          <div>
+                            <input
+                              type="text"
+                              value={textItem.text}
+                              onChange={(e) => handleUpdateUploadText(idx, 'text', e.target.value)}
+                              placeholder="e.g. KEYNOTE SPEAKER or CONFERENCE 2026"
+                              className="w-full bg-[#111111] border border-[#262626] rounded-lg px-2.5 py-1.5 text-xs text-white focus:border-white outline-none"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <label className="text-[10px] text-[#71717A] block mb-0.5">Size (px)</label>
+                              <input
+                                type="number"
+                                value={textItem.fontSize || 48}
+                                onChange={(e) =>
+                                  handleUpdateUploadText(idx, 'fontSize', Math.max(12, Number(e.target.value)))
+                                }
+                                className="w-full bg-[#111111] border border-[#262626] rounded-lg px-2 py-1 text-xs text-white focus:border-white outline-none"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] text-[#71717A] block mb-0.5">Color</label>
+                              <div className="flex items-center gap-1.5 bg-[#111111] border border-[#262626] rounded-lg px-1.5 py-0.5">
+                                <input
+                                  type="color"
+                                  value={textItem.color || '#ffffff'}
+                                  onChange={(e) => handleUpdateUploadText(idx, 'color', e.target.value)}
+                                  className="h-6 w-6 border-0 bg-transparent cursor-pointer rounded"
+                                />
+                                <span className="text-[11px] font-mono text-[#A1A1AA] uppercase">
+                                  {textItem.color || '#FFF'}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] text-[#71717A] block mb-0.5">Y Position (px)</label>
+                              <input
+                                type="number"
+                                value={textItem.y}
+                                onChange={(e) =>
+                                  handleUpdateUploadText(idx, 'y', Math.max(0, Number(e.target.value)))
+                                }
+                                className="w-full bg-[#111111] border border-[#262626] rounded-lg px-2 py-1 text-xs text-white focus:border-white outline-none"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">

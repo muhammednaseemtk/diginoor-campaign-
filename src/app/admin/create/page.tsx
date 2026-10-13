@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { PhotoArea } from '@/lib/types/template';
+import { PhotoArea, PosterTextOverlay } from '@/lib/types/template';
 import { InteractiveAdminCanvas } from '@/components/admin/InteractiveAdminCanvas';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +18,9 @@ import {
   Sparkles,
   Info,
   CheckCircle2,
+  Type,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 
 export default function AdminCreateTemplatePage() {
@@ -27,6 +30,19 @@ export default function AdminCreateTemplatePage() {
   const [title, setTitle] = useState('');
   const [slug, setSlug] = useState('');
   const [category, setCategory] = useState('Conferences & Events');
+  const [categories, setCategories] = useState<string[]>([
+    'Conferences & Events',
+    'Corporate & Awards',
+    'Concerts & Music',
+    'Sports & Fitness',
+    'Celebrations',
+    'Fun & Retro',
+    'Ready-Made Posters',
+    'Other',
+  ]);
+  const [showInlineCategoryInput, setShowInlineCategoryInput] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [creatingCategory, setCreatingCategory] = useState(false);
   const [description, setDescription] = useState('');
 
   // Poster Image state
@@ -44,6 +60,9 @@ export default function AdminCreateTemplatePage() {
     layer: 'inside',
   });
 
+  // Text overlays state
+  const [textOverlays, setTextOverlays] = useState<PosterTextOverlay[]>([]);
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   // Preview state
@@ -52,6 +71,15 @@ export default function AdminCreateTemplatePage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetch('/api/categories', { cache: 'no-store' })
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data?.categories)) setCategories(data.categories);
+      })
+      .catch(() => {});
+  }, []);
 
   // Handle uploaded poster image
   const handlePosterUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -175,6 +203,71 @@ export default function AdminCreateTemplatePage() {
     }));
   };
 
+  const handleCreateCategory = async () => {
+    const trimmed = newCategoryName.trim();
+    if (!trimmed) return;
+    const existing = categories.find((c) => c.toLowerCase() === trimmed.toLowerCase());
+    if (existing) {
+      setCategory(existing);
+      setShowInlineCategoryInput(false);
+      setNewCategoryName('');
+      return;
+    }
+
+    try {
+      setCreatingCategory(true);
+      const res = await fetch('/api/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      const data = await res.json();
+      const createdCat = data.category || trimmed;
+      if (Array.isArray(data.categories)) {
+        setCategories(data.categories);
+      } else {
+        setCategories((prev) => (prev.includes(createdCat) ? prev : [...prev, createdCat]));
+      }
+      setCategory(createdCat);
+      setShowInlineCategoryInput(false);
+      setNewCategoryName('');
+    } catch (err) {
+      console.error('Error creating category:', err);
+    } finally {
+      setCreatingCategory(false);
+    }
+  };
+
+  const handleAddText = () => {
+    setTextOverlays((prev) => [
+      ...prev,
+      {
+        id: `txt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        text: 'Custom Poster Text',
+        fontSize: Math.max(32, Math.round(posterHeight * 0.04)),
+        color: '#ffffff',
+        x: Math.round(posterWidth / 2),
+        y: Math.round(posterHeight * 0.85),
+        textAlign: 'center',
+        fontWeight: 'bold',
+        shadowColor: 'rgba(0, 0, 0, 0.85)',
+        shadowBlur: 8,
+      },
+    ]);
+  };
+
+  const handleUpdateText = (index: number, field: keyof PosterTextOverlay, value: string | number) => {
+    setTextOverlays((prev) => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], [field]: value };
+      return copy;
+    });
+  };
+
+  const handleRemoveText = (index: number) => {
+    setTextOverlays((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleSave = async () => {
     setErrorMsg(null);
     if (!title.trim()) {
@@ -207,6 +300,9 @@ export default function AdminCreateTemplatePage() {
         formData.append('width', String(posterWidth));
         formData.append('height', String(posterHeight));
         formData.append('photoArea', JSON.stringify(photoArea));
+        if (textOverlays.length > 0) {
+          formData.append('textOverlays', JSON.stringify(textOverlays));
+        }
 
         res = await fetch('/api/templates', {
           method: 'POST',
@@ -225,6 +321,7 @@ export default function AdminCreateTemplatePage() {
             height: posterHeight,
             posterImage,
             photoArea,
+            textOverlays,
           }),
         });
       }
@@ -479,22 +576,58 @@ export default function AdminCreateTemplatePage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="category" className="text-xs font-semibold text-white">
-                  Category
-                </Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="category" className="text-xs font-semibold text-white">
+                    Category
+                  </Label>
+                  <button
+                    type="button"
+                    onClick={() => setShowInlineCategoryInput(!showInlineCategoryInput)}
+                    className="text-[11px] text-[#A1A1AA] hover:text-white flex items-center gap-1 font-medium transition-colors"
+                  >
+                    <Plus className="h-3 w-3" />
+                    <span>{showInlineCategoryInput ? 'Cancel' : 'New Category'}</span>
+                  </button>
+                </div>
+
+                {showInlineCategoryInput && (
+                  <div className="flex items-center gap-2 mb-2">
+                    <Input
+                      type="text"
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      placeholder="Enter new category name..."
+                      className="h-8 rounded-lg text-xs bg-[#0D0D0D] border-[#2A2A2A] text-white"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleCreateCategory();
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={creatingCategory || !newCategoryName.trim()}
+                      onClick={handleCreateCategory}
+                      className="h-8 rounded-xl bg-white text-black hover:bg-neutral-200 text-xs font-semibold px-3"
+                    >
+                      {creatingCategory ? 'Adding...' : 'Add'}
+                    </Button>
+                  </div>
+                )}
+
                 <select
                   id="category"
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
                   className="flex h-9 w-full rounded-lg border border-[#2A2A2A] bg-[#0D0D0D] px-2.5 py-1 text-sm text-white shadow-xs focus:outline-none focus:border-white"
                 >
-                  <option value="Conferences & Events" className="bg-[#111111] text-white">Conferences &amp; Events</option>
-                  <option value="Corporate & Awards" className="bg-[#111111] text-white">Corporate &amp; Awards</option>
-                  <option value="Concerts & Music" className="bg-[#111111] text-white">Concerts &amp; Music</option>
-                  <option value="Sports & Fitness" className="bg-[#111111] text-white">Sports &amp; Fitness</option>
-                  <option value="Celebrations" className="bg-[#111111] text-white">Celebrations</option>
-                  <option value="Fun & Retro" className="bg-[#111111] text-white">Fun &amp; Retro</option>
-                  <option value="Other" className="bg-[#111111] text-white">Other</option>
+                  {categories.map((c) => (
+                    <option key={c} value={c} className="bg-[#111111] text-white">
+                      {c}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -510,6 +643,109 @@ export default function AdminCreateTemplatePage() {
                   className="h-9 rounded-lg text-sm bg-[#0D0D0D] border-[#2A2A2A] text-white"
                 />
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Card 4: Poster Text Overlays */}
+          <Card className="rounded-2xl border-[#262626] bg-[#111111] shadow-xs">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base font-bold flex items-center gap-2 text-white">
+                  <Type className="h-4 w-4 text-white" />
+                  <span>4. Text Overlays (Optional)</span>
+                </CardTitle>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddText}
+                  className="h-7 text-xs border-[#262626] bg-[#0D0D0D] text-white hover:bg-[#1A1A1A] rounded-lg"
+                >
+                  <Plus className="mr-1 h-3 w-3" />
+                  Add Text
+                </Button>
+              </div>
+              <CardDescription className="text-xs text-[#A1A1AA]">
+                Add custom titles, dates, or captions on this poster. They will appear on user previews and final downloads.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {textOverlays.length === 0 ? (
+                <p className="text-[11px] text-[#71717A]">
+                  No custom text added. Click &quot;Add Text&quot; to overlay titles or captions onto this poster.
+                </p>
+              ) : (
+                <div className="space-y-3 max-h-[260px] overflow-y-auto pr-1">
+                  {textOverlays.map((textItem, idx) => (
+                    <div
+                      key={textItem.id || idx}
+                      className="bg-[#0D0D0D] border border-[#262626] rounded-xl p-3 space-y-2.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold text-[#A1A1AA]">
+                          Text #{idx + 1}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveText(idx)}
+                          className="text-[#71717A] hover:text-red-400 p-1 transition-colors"
+                          title="Remove text"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+
+                      <Input
+                        value={textItem.text}
+                        onChange={(e) => handleUpdateText(idx, 'text', e.target.value)}
+                        placeholder="e.g. KEYNOTE SPEAKER"
+                        className="h-8 rounded-lg text-xs bg-[#111111] border-[#2A2A2A] text-white"
+                      />
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <Label className="text-[10px] text-[#71717A] block mb-0.5">Size (px)</Label>
+                          <Input
+                            type="number"
+                            value={textItem.fontSize || 48}
+                            onChange={(e) =>
+                              handleUpdateText(idx, 'fontSize', Math.max(12, Number(e.target.value)))
+                            }
+                            className="h-7 rounded-lg text-xs bg-[#111111] border-[#2A2A2A] text-white"
+                          />
+                        </div>
+
+                        <div>
+                          <Label className="text-[10px] text-[#71717A] block mb-0.5">Color</Label>
+                          <div className="flex items-center gap-1.5 bg-[#111111] border border-[#2A2A2A] rounded-lg px-1.5 py-0.5 h-7">
+                            <input
+                              type="color"
+                              value={textItem.color || '#ffffff'}
+                              onChange={(e) => handleUpdateText(idx, 'color', e.target.value)}
+                              className="h-5 w-5 border-0 bg-transparent cursor-pointer rounded"
+                            />
+                            <span className="text-[10px] font-mono text-[#A1A1AA] uppercase">
+                              {textItem.color || '#FFF'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <Label className="text-[10px] text-[#71717A] block mb-0.5">Y Pos (px)</Label>
+                          <Input
+                            type="number"
+                            value={textItem.y}
+                            onChange={(e) =>
+                              handleUpdateText(idx, 'y', Math.max(0, Number(e.target.value)))
+                            }
+                            className="h-7 rounded-lg text-xs bg-[#111111] border-[#2A2A2A] text-white"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -556,6 +792,7 @@ export default function AdminCreateTemplatePage() {
                   onPhotoAreaChange={setPhotoArea}
                   showSamplePreview={showSamplePreview}
                   sampleImageUrl="/templates/sample-portrait.jpg"
+                  textOverlays={textOverlays}
                 />
               ) : (
                 <div

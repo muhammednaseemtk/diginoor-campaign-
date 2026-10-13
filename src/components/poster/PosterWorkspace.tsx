@@ -70,8 +70,9 @@ export function PosterWorkspace({ template }: PosterWorkspaceProps) {
       photoArea: template.photoArea,
       canvas: canvasRef.current,
       showPlaceholderGuide: !userImgRef.current,
+      textOverlays: template.textOverlays || template.photoArea.textOverlays,
     });
-  }, [template.photoArea, userPhotoUrl, posterLoaded]);
+  }, [template.photoArea, template.textOverlays, userPhotoUrl, posterLoaded]);
 
   // Handle image file selection
   const processUploadedFile = (file: File) => {
@@ -97,6 +98,7 @@ export function PosterWorkspace({ template }: PosterWorkspaceProps) {
               photoArea: template.photoArea,
               canvas: canvasRef.current,
               showPlaceholderGuide: false,
+              textOverlays: template.textOverlays || template.photoArea.textOverlays,
             });
           }
         })
@@ -138,6 +140,7 @@ export function PosterWorkspace({ template }: PosterWorkspaceProps) {
         photoArea: template.photoArea,
         canvas: canvasRef.current,
         showPlaceholderGuide: true,
+        textOverlays: template.textOverlays || template.photoArea.textOverlays,
       });
     }
   };
@@ -157,6 +160,7 @@ export function PosterWorkspace({ template }: PosterWorkspaceProps) {
           photoArea: template.photoArea,
           canvas: canvasRef.current,
           showPlaceholderGuide: false,
+          textOverlays: template.textOverlays || template.photoArea.textOverlays,
         });
       }
     });
@@ -174,7 +178,15 @@ export function PosterWorkspace({ template }: PosterWorkspaceProps) {
       const extension = exportFormat === 'png' ? 'png' : 'jpg';
 
       let dataUrl: string;
-      if (canvasRef.current && userImgRef.current) {
+      if (canvasRef.current && userImgRef.current && posterImgRef.current) {
+        renderPosterToCanvas({
+          posterImage: posterImgRef.current,
+          userImage: userImgRef.current,
+          photoArea: template.photoArea,
+          canvas: canvasRef.current,
+          showPlaceholderGuide: false,
+          textOverlays: template.textOverlays || template.photoArea.textOverlays,
+        });
         dataUrl = canvasRef.current.toDataURL(mimeType, exportFormat === 'png' ? 1.0 : 0.98);
       } else {
         dataUrl = await generateExportDataUrl(
@@ -182,7 +194,8 @@ export function PosterWorkspace({ template }: PosterWorkspaceProps) {
           userPhotoUrl,
           template.photoArea,
           mimeType,
-          exportFormat === 'png' ? 1.0 : 0.98
+          exportFormat === 'png' ? 1.0 : 0.98,
+          template.textOverlays || template.photoArea.textOverlays
         );
       }
 

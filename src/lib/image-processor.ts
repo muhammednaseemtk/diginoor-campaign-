@@ -1,4 +1,4 @@
-import { PhotoArea } from '@/lib/types/template';
+import { PhotoArea, PosterTextOverlay } from '@/lib/types/template';
 
 export interface RenderOptions {
   posterImage: HTMLImageElement;
@@ -6,6 +6,7 @@ export interface RenderOptions {
   photoArea: PhotoArea;
   canvas: HTMLCanvasElement;
   showPlaceholderGuide?: boolean;
+  textOverlays?: PosterTextOverlay[];
 }
 
 /**
@@ -93,6 +94,7 @@ export function renderPosterToCanvas({
   photoArea,
   canvas,
   showPlaceholderGuide = false,
+  textOverlays,
 }: RenderOptions): void {
   const ctx = canvas.getContext('2d', { willReadFrequently: false });
   if (!ctx) return;
@@ -163,6 +165,35 @@ export function renderPosterToCanvas({
     ctx.stroke();
     ctx.restore();
   }
+
+  // Draw any custom text overlays configured on the poster
+  const texts = textOverlays || photoArea.textOverlays || [];
+  if (Array.isArray(texts) && texts.length > 0) {
+    texts.forEach((item) => {
+      if (!item || !item.text || !item.text.trim()) return;
+      ctx.save();
+      const fontSize = item.fontSize || 54;
+      const fontWeight = item.fontWeight || 'bold';
+      const fontFamily = item.fontFamily || 'system-ui, -apple-system, sans-serif';
+      ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+      ctx.textAlign = (item.textAlign as CanvasTextAlign) || 'center';
+      ctx.textBaseline = 'middle';
+
+      // Drop shadow for crisp readability against light or dark artwork
+      ctx.shadowColor = item.shadowColor || 'rgba(0, 0, 0, 0.85)';
+      ctx.shadowBlur = item.shadowBlur ?? 8;
+      ctx.shadowOffsetX = 2;
+      ctx.shadowOffsetY = 2;
+
+      ctx.fillStyle = item.color || '#ffffff';
+
+      const posX = item.x !== undefined ? item.x : Math.round(targetWidth / 2);
+      const posY = item.y !== undefined ? item.y : Math.round(targetHeight * 0.88);
+
+      ctx.fillText(item.text, posX, posY);
+      ctx.restore();
+    });
+  }
 }
 
 /**
@@ -173,7 +204,8 @@ export async function generateExportDataUrl(
   userPhotoUrl: string,
   photoArea: PhotoArea,
   format: 'image/png' | 'image/jpeg' = 'image/png',
-  quality = 0.98
+  quality = 0.98,
+  textOverlays?: PosterTextOverlay[]
 ): Promise<string> {
   const [posterImg, userImg] = await Promise.all([
     loadImage(posterUrl),
@@ -190,6 +222,7 @@ export async function generateExportDataUrl(
     photoArea,
     canvas,
     showPlaceholderGuide: false,
+    textOverlays: textOverlays || photoArea.textOverlays,
   });
 
   return canvas.toDataURL(format, quality);

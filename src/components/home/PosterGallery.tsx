@@ -10,19 +10,25 @@ import { ArrowRight, Search, SlidersHorizontal, Image as ImageIcon } from 'lucid
 
 interface PosterGalleryProps {
   initialTemplates: PosterTemplate[];
+  allCategories?: string[];
 }
 
-export function PosterGallery({ initialTemplates }: PosterGalleryProps) {
+export function PosterGallery({ initialTemplates, allCategories }: PosterGalleryProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const categories = useMemo(() => {
     const set = new Set<string>();
+    if (allCategories) {
+      allCategories.forEach((c) => {
+        if (c && c.trim()) set.add(c.trim());
+      });
+    }
     initialTemplates.forEach((t) => {
       if (t.category) set.add(t.category);
     });
     return ['All', ...Array.from(set)];
-  }, [initialTemplates]);
+  }, [initialTemplates, allCategories]);
 
   const filteredTemplates = useMemo(() => {
     return initialTemplates.filter((template) => {

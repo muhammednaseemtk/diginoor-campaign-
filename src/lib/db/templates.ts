@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { PosterTemplate, CreateTemplateInput, PhotoArea } from '@/lib/types/template';
+import { PosterTemplate, CreateTemplateInput, PhotoArea, PosterTextOverlay } from '@/lib/types/template';
 import {
   supabase,
   supabaseAdmin,
@@ -8,6 +8,7 @@ import {
   checkIsSupabaseAdminConfigured,
 } from '@/lib/supabase';
 import { deletePosterFromStorage } from '@/lib/server-storage';
+import { categoryDb } from '@/lib/db/categories';
 
 const DATA_FILE_PATH = path.join(process.cwd(), 'data.json');
 
@@ -53,17 +54,43 @@ export function isUnwantedDefaultPoster(template?: { id?: string; slug?: string;
 let supabaseCleanupRan = false;
 
 function parseCanvasConfig(raw: unknown): PhotoArea {
+  let parsed: Record<string, unknown> = {};
   if (typeof raw === 'string') {
     try {
-      return JSON.parse(raw);
+      parsed = JSON.parse(raw);
     } catch {
-      return { x: 200, y: 250, width: 680, height: 650, borderRadius: 16, layer: 'inside' };
+      return { x: 200, y: 250, width: 680, height: 650, borderRadius: 16, layer: 'inside', textOverlays: [] };
     }
+  } else if (raw && typeof raw === 'object') {
+    parsed = raw as Record<string, unknown>;
+  } else {
+    return { x: 200, y: 250, width: 680, height: 650, borderRadius: 16, layer: 'inside', textOverlays: [] };
   }
-  if (raw && typeof raw === 'object') {
-    return raw as PhotoArea;
-  }
-  return { x: 200, y: 250, width: 680, height: 650, borderRadius: 16, layer: 'inside' };
+
+  const rawTexts = Array.isArray(parsed.textOverlays) ? parsed.textOverlays : [];
+  const textOverlays: PosterTextOverlay[] = rawTexts.map((item: Partial<PosterTextOverlay>) => ({
+    id: item.id || `txt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    text: String(item.text || ''),
+    x: Number(item.x) || 540,
+    y: Number(item.y) || 1200,
+    fontSize: Number(item.fontSize) || 54,
+    fontFamily: item.fontFamily || 'system-ui, -apple-system, sans-serif',
+    color: item.color || '#ffffff',
+    fontWeight: item.fontWeight || 'bold',
+    textAlign: (item.textAlign as 'left' | 'center' | 'right') || 'center',
+    shadowColor: item.shadowColor || 'rgba(0,0,0,0.85)',
+    shadowBlur: Number(item.shadowBlur ?? 8),
+  }));
+
+  return {
+    x: Number(parsed.x) || 200,
+    y: Number(parsed.y) || 250,
+    width: Number(parsed.width) || 680,
+    height: Number(parsed.height) || 650,
+    borderRadius: Number(parsed.borderRadius) || 16,
+    layer: parsed.layer === 'behind' ? 'behind' : 'inside',
+    textOverlays,
+  };
 }
 
 async function isPosterImageShared(
@@ -133,7 +160,21 @@ function readData(): PosterTemplate[] {
 
 function writeData(templates: PosterTemplate[]) {
   const cleanTemplates = templates.filter((t) => !isUnwantedDefaultPoster(t));
-  fs.writeFileSync(DATA_FILE_PATH, JSON.stringify({ templates: cleanTemplates }, null, 2), 'utf-8');
+  let existingCategories: string[] = [];
+  try {
+    if (fs.existsSync(DATA_FILE_PATH)) {
+      const content = fs.readFileSync(DATA_FILE_PATH, 'utf-8');
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed.categories)) {
+        existingCategories = parsed.categories;
+      }
+    }
+  } catch {}
+  fs.writeFileSync(
+    DATA_FILE_PATH,
+    JSON.stringify({ templates: cleanTemplates, categories: existingCategories }, null, 2),
+    'utf-8'
+  );
 }
 
 export const templateDb = {
@@ -165,19 +206,23 @@ export const templateDb = {
 
         if (!error && Array.isArray(data)) {
           const remoteList: PosterTemplate[] = data
-            .map((row) => ({
-              id: String(row.id),
-              title: row.title,
-              slug: row.slug,
-              description: row.description || '',
-              category: row.category || 'General',
-              width: Number(row.width) || 1080,
-              height: Number(row.height) || 1350,
-              posterImage: row.base_image_url,
-              photoArea: parseCanvasConfig(row.canvas_config),
-              sampleUserPhoto: '/templates/sample-portrait.jpg',
-              createdAt: row.created_at || new Date().toISOString(),
-            }))
+            .map((row) => {
+              const photoArea = parseCanvasConfig(row.canvas_config);
+              return {
+                id: String(row.id),
+                title: row.title,
+                slug: row.slug,
+                description: row.description || '',
+                category: row.category || 'General',
+                width: Number(row.width) || 1080,
+                height: Number(row.height) || 1350,
+                posterImage: row.base_image_url,
+                photoArea,
+                textOverlays: photoArea.textOverlays || [],
+                sampleUserPhoto: '/templates/sample-portrait.jpg',
+                createdAt: row.created_at || new Date().toISOString(),
+              };
+            })
             .filter((t) => !isUnwantedDefaultPoster(t));
 
           // Keep local cache file synchronized with Supabase persistent state
@@ -222,6 +267,7 @@ export const templateDb = {
         const { data, error } = await query.maybeSingle();
 
         if (!error && data) {
+          const photoArea = parseCanvasConfig(data.canvas_config);
           const template: PosterTemplate = {
             id: String(data.id),
             title: data.title,
@@ -231,7 +277,8 @@ export const templateDb = {
             width: Number(data.width) || 1080,
             height: Number(data.height) || 1350,
             posterImage: data.base_image_url,
-            photoArea: parseCanvasConfig(data.canvas_config),
+            photoArea,
+            textOverlays: photoArea.textOverlays || [],
             sampleUserPhoto: '/templates/sample-portrait.jpg',
             createdAt: data.created_at || new Date().toISOString(),
           };
@@ -262,10 +309,20 @@ export const templateDb = {
    * Creates a new poster template:
    * 1. Inserts into Supabase 'templates' database table using elevated server client.
    * 2. Obtains the unique database UUID.
-   * 3. Retains the exact photo-area configuration associated with that record.
+   * 3. Retains the exact photo-area and text-overlay configuration associated with that record.
    */
   create: async (input: CreateTemplateInput): Promise<PosterTemplate> => {
     const isConfigured = checkIsSupabaseAdminConfigured();
+    const photoAreaToStore = {
+      ...input.photoArea,
+      textOverlays: input.textOverlays || input.photoArea.textOverlays || [],
+    };
+
+    // Auto-register category
+    if (input.category) {
+      categoryDb.create(input.category).catch(() => {});
+    }
+
     // 1. If Supabase admin client is configured, save directly to database table 'templates'
     if (isConfigured) {
       const { data, error } = await supabaseAdmin
@@ -274,7 +331,7 @@ export const templateDb = {
           title: input.title,
           slug: input.slug,
           base_image_url: input.posterImage,
-          canvas_config: JSON.stringify(input.photoArea),
+          canvas_config: JSON.stringify(photoAreaToStore),
           category: input.category || 'General',
           description: input.description || '',
           width: input.width || 1080,
@@ -297,6 +354,7 @@ export const templateDb = {
         throw new Error('Database insert completed but returned no record.');
       }
 
+      const createdPhotoArea = parseCanvasConfig(data.canvas_config);
       const created: PosterTemplate = {
         id: String(data.id),
         title: data.title,
@@ -306,7 +364,8 @@ export const templateDb = {
         width: Number(data.width) || 1080,
         height: Number(data.height) || 1350,
         posterImage: data.base_image_url,
-        photoArea: parseCanvasConfig(data.canvas_config),
+        photoArea: createdPhotoArea,
+        textOverlays: createdPhotoArea.textOverlays || [],
         sampleUserPhoto: '/templates/sample-portrait.jpg',
         createdAt: data.created_at || new Date().toISOString(),
       };
@@ -323,15 +382,38 @@ export const templateDb = {
       return created;
     }
 
-    throw new Error(
-      'Supabase database is not configured. Please ensure NEXT_PUBLIC_SUPABASE_URL (or SUPABASE_URL) and SUPABASE_SECRET_KEY are set in your environment variables.'
-    );
+    // 2. Local fallback if Supabase is not configured
+    const created: PosterTemplate = {
+      id: `tpl-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      title: input.title,
+      slug: input.slug,
+      description: input.description || '',
+      category: input.category || 'General',
+      width: input.width || 1080,
+      height: input.height || 1350,
+      posterImage: input.posterImage,
+      photoArea: photoAreaToStore,
+      textOverlays: photoAreaToStore.textOverlays || [],
+      sampleUserPhoto: '/templates/sample-portrait.jpg',
+      createdAt: new Date().toISOString(),
+    };
+    try {
+      const list = readData();
+      list.unshift(created);
+      writeData(list);
+    } catch {}
+
+    return created;
   },
 
   /**
    * Updates an existing poster template record in Supabase & locally.
    */
   update: async (slugOrId: string, updates: Partial<PosterTemplate>): Promise<PosterTemplate | null> => {
+    if (updates.category) {
+      categoryDb.create(updates.category).catch(() => {});
+    }
+
     const list = readData();
     const index = list.findIndex((t) => t.slug === slugOrId || t.id === slugOrId);
     if (index !== -1) {
@@ -345,7 +427,13 @@ export const templateDb = {
         if (updates.title) payload.title = updates.title;
         if (updates.description !== undefined) payload.description = updates.description;
         if (updates.category) payload.category = updates.category;
-        if (updates.photoArea) payload.canvas_config = JSON.stringify(updates.photoArea);
+        if (updates.photoArea || updates.textOverlays) {
+          const baseArea = updates.photoArea || (index !== -1 ? list[index].photoArea : {});
+          payload.canvas_config = JSON.stringify({
+            ...baseArea,
+            textOverlays: updates.textOverlays ?? updates.photoArea?.textOverlays ?? (index !== -1 ? list[index].textOverlays : []),
+          });
+        }
         if (updates.posterImage) payload.base_image_url = updates.posterImage;
 
         const isUuid = UUID_REGEX.test(slugOrId);
@@ -359,6 +447,7 @@ export const templateDb = {
 
         const { data } = await query.select('*').maybeSingle();
         if (data) {
+          const updatedArea = parseCanvasConfig(data.canvas_config);
           return {
             id: String(data.id),
             title: data.title,
@@ -368,7 +457,8 @@ export const templateDb = {
             width: Number(data.width) || 1080,
             height: Number(data.height) || 1350,
             posterImage: data.base_image_url,
-            photoArea: parseCanvasConfig(data.canvas_config),
+            photoArea: updatedArea,
+            textOverlays: updatedArea.textOverlays || [],
             sampleUserPhoto: '/templates/sample-portrait.jpg',
             createdAt: data.created_at || new Date().toISOString(),
           };

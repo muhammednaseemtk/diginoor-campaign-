@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useState } from 'react';
-import { PhotoArea } from '@/lib/types/template';
+import { PhotoArea, PosterTextOverlay } from '@/lib/types/template';
 import { loadImage, renderPosterToCanvas, drawRoundedRect } from '@/lib/image-processor';
 
 interface InteractiveAdminCanvasProps {
@@ -12,6 +12,7 @@ interface InteractiveAdminCanvasProps {
   onPhotoAreaChange: (newArea: PhotoArea) => void;
   showSamplePreview: boolean;
   sampleImageUrl?: string;
+  textOverlays?: PosterTextOverlay[];
 }
 
 type DragMode = 'move' | 'nw' | 'ne' | 'se' | 'sw' | 'n' | 's' | 'e' | 'w' | null;
@@ -24,6 +25,7 @@ export function InteractiveAdminCanvas({
   onPhotoAreaChange,
   showSamplePreview,
   sampleImageUrl = '/templates/sample-portrait.jpg',
+  textOverlays,
 }: InteractiveAdminCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -89,18 +91,14 @@ export function InteractiveAdminCanvas({
       canvas.height = targetH;
     }
 
-    if (showSamplePreview && sampleImgRef.current) {
-      renderPosterToCanvas({
-        posterImage: poster,
-        userImage: sampleImgRef.current,
-        photoArea,
-        canvas,
-        showPlaceholderGuide: false,
-      });
-    } else {
-      ctx.clearRect(0, 0, targetW, targetH);
-      ctx.drawImage(poster, 0, 0, targetW, targetH);
-    }
+    renderPosterToCanvas({
+      posterImage: poster,
+      userImage: showSamplePreview && sampleImgRef.current ? sampleImgRef.current : null,
+      photoArea,
+      canvas,
+      showPlaceholderGuide: false,
+      textOverlays: textOverlays || photoArea.textOverlays,
+    });
 
     // Always draw administrative overlay bounding box and handles
     const { x, y, width: w, height: h, borderRadius = 0 } = photoArea;
@@ -165,7 +163,7 @@ export function InteractiveAdminCanvas({
     }
 
     ctx.restore();
-  }, [posterWidth, posterHeight, photoArea, showSamplePreview, posterLoaded, sampleLoaded]);
+  }, [posterWidth, posterHeight, photoArea, showSamplePreview, posterLoaded, sampleLoaded, textOverlays]);
 
   // Convert screen coordinates to canvas native coordinates
   const getPointCoords = (clientX: number, clientY: number) => {

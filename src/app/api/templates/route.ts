@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { templateDb } from '@/lib/db/templates';
-import { CreateTemplateInput, PhotoArea } from '@/lib/types/template';
+import { CreateTemplateInput, PhotoArea, PosterTextOverlay } from '@/lib/types/template';
 import { uploadPosterToStorage } from '@/lib/server-storage';
 import { isRequestAdmin } from '@/lib/admin-auth';
 import sharp from 'sharp';
@@ -89,6 +89,7 @@ export async function POST(request: Request) {
     let posterHeight = 1350;
     let customPhotoArea: PhotoArea | null = null;
     let uploadedBuffer: Buffer | null = null;
+    let textOverlays: PosterTextOverlay[] = [];
 
     // Handle multipart/form-data upload (Direct file upload from Admin)
     if (contentType.includes('multipart/form-data')) {
@@ -107,6 +108,14 @@ export async function POST(request: Request) {
       if (rawPhotoArea) {
         try {
           customPhotoArea = JSON.parse(rawPhotoArea);
+        } catch {}
+      }
+
+      const rawTextOverlays = formData.get('textOverlays') as string | null;
+      if (rawTextOverlays) {
+        try {
+          const parsed = JSON.parse(rawTextOverlays);
+          if (Array.isArray(parsed)) textOverlays = parsed;
         } catch {}
       }
 
@@ -147,6 +156,7 @@ export async function POST(request: Request) {
       if (body.width) posterWidth = Number(body.width);
       if (body.height) posterHeight = Number(body.height);
       if (body.photoArea) customPhotoArea = body.photoArea;
+      if (Array.isArray(body.textOverlays)) textOverlays = body.textOverlays;
 
       // If posterImage is a base64 payload, upload to Supabase Storage (with fallback)
       if (finalImageUrl && finalImageUrl.startsWith('data:image')) {
@@ -229,6 +239,7 @@ export async function POST(request: Request) {
       height: posterHeight,
       posterImage: finalImageUrl,
       photoArea,
+      textOverlays,
       sampleUserPhoto: '/templates/sample-portrait.jpg',
     };
 
