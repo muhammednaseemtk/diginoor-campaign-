@@ -1,8 +1,10 @@
+import dns from 'dns/promises';
 import { NextResponse } from 'next/server';
 import {
   checkIsSupabaseConfigured,
   checkIsSupabaseAdminConfigured,
   getSupabaseConfigStatus,
+  getCleanSupabaseUrl,
   getCleanSupabasePublishableKey,
   getCleanSupabaseSecretKey,
   supabase,
@@ -27,6 +29,16 @@ export async function GET() {
     serverAdminClient: {
       ready: boolean;
       usingSecretKey: boolean;
+    };
+    networkDiagnostic?: {
+      urlHostMasked: string;
+      urlProtocol: string;
+      urlEndsWithSupabaseCo: boolean;
+      dnsResolved: boolean;
+      dnsError?: string;
+      rawFetchStatus?: number;
+      rawFetchError?: string;
+      rawFetchCause?: string;
     };
     database: {
       connected: boolean;
@@ -72,6 +84,58 @@ export async function GET() {
     report.status = 'configured';
     report.note = 'Supabase credentials and URL are detected and active.';
 
+    // Safe network & DNS diagnostic
+    const resolvedUrl = getCleanSupabaseUrl();
+    if (resolvedUrl) {
+      try {
+        const parsed = new URL(resolvedUrl);
+        const host = parsed.hostname;
+        let masked = host;
+        if (host.length > 8) {
+          masked = `${host.slice(0, 3)}...${host.slice(-10)}`;
+        }
+        report.networkDiagnostic = {
+          urlHostMasked: masked,
+          urlProtocol: parsed.protocol,
+          urlEndsWithSupabaseCo: host.endsWith('.supabase.co'),
+          dnsResolved: false,
+        };
+
+        try {
+          const lookup = await dns.lookup(host);
+          report.networkDiagnostic.dnsResolved = Boolean(lookup?.address);
+        } catch (e: unknown) {
+          report.networkDiagnostic.dnsResolved = false;
+          report.networkDiagnostic.dnsError =
+            e instanceof Error ? e.message : String(e);
+        }
+
+        try {
+          const pingRes = await fetch(`${resolvedUrl}/rest/v1/`, {
+            method: 'GET',
+            headers: {
+              apikey: getCleanSupabaseSecretKey() || getCleanSupabasePublishableKey(),
+            },
+          });
+          report.networkDiagnostic.rawFetchStatus = pingRes.status;
+        } catch (e: unknown) {
+          report.networkDiagnostic.rawFetchError =
+            e instanceof Error ? e.message : String(e);
+          const cause = (e as { cause?: { code?: string; message?: string } })?.cause;
+          report.networkDiagnostic.rawFetchCause =
+            cause?.code || cause?.message || String(cause || '');
+        }
+      } catch (err: unknown) {
+        report.networkDiagnostic = {
+          urlHostMasked: 'malformed_url',
+          urlProtocol: 'invalid',
+          urlEndsWithSupabaseCo: false,
+          dnsResolved: false,
+          dnsError: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+
     const client = isAdminReady ? supabaseAdmin : supabase;
 
     // Test database connection
@@ -85,11 +149,13 @@ export async function GET() {
         report.database.connected = true;
       } else {
         report.database.connected = false;
-        report.database.error = dbError.message.replace(/sb_[A-Za-z0-9_-]+/g, '[REDACTED]');
+        report.database.error = (dbError.message || JSON.stringify(dbError)).replace(/sb_[A-Za-z0-9_-]+/g, '[REDACTED]');
       }
-    } catch (err) {
+    } catch (err: unknown) {
       report.database.connected = false;
-      report.database.error = (err instanceof Error ? err.message : String(err)).replace(
+      const cause = (err as { cause?: { code?: string; message?: string } })?.cause;
+      const causeStr = cause?.code ? ` (${cause.code})` : '';
+      report.database.error = `${err instanceof Error ? err.message : String(err)}${causeStr}`.replace(
         /sb_[A-Za-z0-9_-]+/g,
         '[REDACTED]'
       );
@@ -99,9 +165,11 @@ export async function GET() {
     try {
       const bucketOk = await ensurePostersBucket();
       report.storage.verified = bucketOk;
-    } catch (err) {
+    } catch (err: unknown) {
       report.storage.verified = false;
-      report.storage.error = (err instanceof Error ? err.message : String(err)).replace(
+      const cause = (err as { cause?: { code?: string; message?: string } })?.cause;
+      const causeStr = cause?.code ? ` (${cause.code})` : '';
+      report.storage.error = `${err instanceof Error ? err.message : String(err)}${causeStr}`.replace(
         /sb_[A-Za-z0-9_-]+/g,
         '[REDACTED]'
       );
