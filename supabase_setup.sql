@@ -36,6 +36,22 @@ ON templates FOR SELECT
 TO anon, authenticated
 USING (true);
 
+-- 2. REALTIME SYNCHRONIZATION
+-- Enable publication for realtime postgres_changes (INSERT, UPDATE, DELETE)
+-- Ensures clients receive instant updates when posters are added, updated, or removed.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'templates'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE templates;
+  END IF;
+END $$;
+
+-- Send all column data on DELETE events so clients receive ID and slug in realtime payloads
+ALTER TABLE templates REPLICA IDENTITY FULL;
+
 -- NOTE ON ADMIN MUTATIONS (INSERT, UPDATE, DELETE):
 -- Poster creation, editing, and deletion are handled securely on the server
 -- using the Supabase Secret Key (Service Role client).

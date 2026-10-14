@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { PhotoArea, PosterTextOverlay } from '@/lib/types/template';
+import { broadcastPosterChange } from '@/lib/poster-sync';
 import { InteractiveAdminCanvas } from '@/components/admin/InteractiveAdminCanvas';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -350,6 +351,7 @@ export default function AdminCreateTemplatePage() {
         throw new Error(data.error || 'Failed to save template');
       }
 
+      broadcastPosterChange({ type: 'INSERT', template: data });
       showToast('Poster created successfully!', 'success');
       setErrorMsg(null);
 

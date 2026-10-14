@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { templateDb } from '@/lib/db/templates';
 import { isRequestAdmin } from '@/lib/admin-auth';
 
@@ -60,7 +61,18 @@ export async function PUT(
       return NextResponse.json({ error: 'Template not found or update failed' }, { status: 404 });
     }
     
-    return NextResponse.json(updated);
+    try {
+      revalidatePath('/', 'page');
+      revalidatePath('/admin', 'page');
+    } catch {}
+
+    return NextResponse.json(updated, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        Pragma: 'no-cache',
+        Expires: '0',
+      },
+    });
   } catch (error) {
     const rawMessage = error instanceof Error ? error.message : 'Failed to update template';
     const cleanMessage = rawMessage.replace(/sb_[A-Za-z0-9_-]+/g, '[REDACTED]');
@@ -93,6 +105,11 @@ export async function DELETE(
       return NextResponse.json({ error: 'Template not found' }, { status: 404 });
     }
     
+    try {
+      revalidatePath('/', 'page');
+      revalidatePath('/admin', 'page');
+    } catch {}
+
     return NextResponse.json(
       { success: true, message: 'Template deleted permanently' },
       {

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { templateDb } from '@/lib/db/templates';
 import { CreateTemplateInput, PhotoArea, PosterTextOverlay } from '@/lib/types/template';
 import { uploadPosterToStorage } from '@/lib/server-storage';
@@ -244,7 +245,18 @@ export async function POST(request: Request) {
     };
 
     const created = await templateDb.create(templateInput);
-    return NextResponse.json(created, { status: 201 });
+    try {
+      revalidatePath('/', 'page');
+      revalidatePath('/admin', 'page');
+    } catch {}
+    return NextResponse.json(created, {
+      status: 201,
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        Pragma: 'no-cache',
+        Expires: '0',
+      },
+    });
   } catch (error: unknown) {
     const rawMessage = error instanceof Error ? error.message : 'Failed to create template';
     const cleanMessage = rawMessage.replace(/sb_[A-Za-z0-9_-]+/g, '[REDACTED]');

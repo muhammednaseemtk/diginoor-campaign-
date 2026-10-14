@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { PosterTemplate } from '@/lib/types/template';
+import { usePosterSync } from '@/lib/poster-sync';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { ArrowRight, Search, SlidersHorizontal, Image as ImageIcon } from 'lucide-react';
@@ -17,6 +18,8 @@ export function PosterGallery({ initialTemplates, allCategories }: PosterGallery
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
+  const { templates } = usePosterSync({ initialTemplates });
+
   const categories = useMemo(() => {
     const set = new Set<string>();
     if (allCategories) {
@@ -24,14 +27,14 @@ export function PosterGallery({ initialTemplates, allCategories }: PosterGallery
         if (c && c.trim()) set.add(c.trim());
       });
     }
-    initialTemplates.forEach((t) => {
+    templates.forEach((t) => {
       if (t.category) set.add(t.category);
     });
     return ['All', ...Array.from(set)];
-  }, [initialTemplates, allCategories]);
+  }, [templates, allCategories]);
 
   const filteredTemplates = useMemo(() => {
-    return initialTemplates.filter((template) => {
+    return templates.filter((template) => {
       const matchesCategory =
         selectedCategory === 'All' || template.category === selectedCategory;
       const matchesSearch =
@@ -39,7 +42,7 @@ export function PosterGallery({ initialTemplates, allCategories }: PosterGallery
         template.description?.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesCategory && matchesSearch;
     });
-  }, [initialTemplates, selectedCategory, searchQuery]);
+  }, [templates, selectedCategory, searchQuery]);
 
   return (
     <div className="space-y-10">

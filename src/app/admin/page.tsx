@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { PhotoArea, PosterTemplate, PosterTextOverlay } from '@/lib/types/template';
+import { usePosterSync } from '@/lib/poster-sync';
 import { InteractiveAdminCanvas } from '@/components/admin/InteractiveAdminCanvas';
 import { renderPosterToCanvas } from '@/lib/image-processor';
 import { Button } from '@/components/ui/button';
@@ -26,9 +27,17 @@ import {
 } from 'lucide-react';
 
 export default function AdminDashboard() {
-  const [templates, setTemplates] = useState<PosterTemplate[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    templates,
+    setTemplates,
+    loading,
+    error,
+    setError,
+    refresh: refreshTemplates,
+    addPoster,
+    removePoster,
+    updatePoster,
+  } = usePosterSync();
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Floating Toast / Snackbar state
@@ -89,28 +98,6 @@ export default function AdminDashboard() {
   useEffect(() => {
     let isCancelled = false;
 
-    const cacheBust = `_t=${Date.now()}`;
-    fetch(`/api/templates?${cacheBust}`, { cache: 'no-store' })
-      .then((res) => {
-        if (!res.ok) throw new Error('Failed to fetch templates');
-        return res.json();
-      })
-      .then((data) => {
-        if (!isCancelled) {
-          if (Array.isArray(data)) {
-            setTemplates(data);
-          }
-          setLoading(false);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!isCancelled) {
-          const msg = err instanceof Error ? err.message : 'Error loading templates';
-          setError(msg);
-          setLoading(false);
-        }
-      });
-
     fetch('/api/categories', { cache: 'no-store' })
       .then((res) => res.json())
       .then((data) => {
@@ -130,25 +117,18 @@ export default function AdminDashboard() {
 
   const reloadTemplates = useCallback(async () => {
     try {
-      setLoading(true);
-      setError(null);
       const cacheBust = `_t=${Date.now()}`;
-      const [resTemplates, resCategories] = await Promise.all([
-        fetch(`/api/templates?${cacheBust}`, { cache: 'no-store' }),
+      const [, resCategories] = await Promise.all([
+        refreshTemplates(),
         fetch(`/api/categories?${cacheBust}`, { cache: 'no-store' }),
       ]);
-      const dataTemplates = await resTemplates.json();
       const dataCategories = await resCategories.json();
-      if (!resTemplates.ok) throw new Error(dataTemplates?.error || 'Failed to fetch templates');
-      if (Array.isArray(dataTemplates)) setTemplates(dataTemplates);
       if (Array.isArray(dataCategories?.categories)) setCategories(dataCategories.categories);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error loading templates';
       setError(msg);
-    } finally {
-      setLoading(false);
     }
-  }, []);
+  }, [refreshTemplates, setError]);
 
 
 
@@ -398,12 +378,9 @@ export default function AdminDashboard() {
       }
 
       // Add to template list immediately so it appears on admin & user pages
-      setTemplates((prev) => [newTemplate, ...prev.filter((t) => t.id !== newTemplate.id && t.slug !== newTemplate.slug)]);
+      addPoster(newTemplate);
       showToast('Poster created successfully!', 'success');
       setError(null);
-
-      // Re-fetch in background to ensure persistence
-      reloadTemplates();
 
       // Clean up and close modal
       if (uploadPreviewUrl) {
@@ -445,12 +422,9 @@ export default function AdminDashboard() {
         throw new Error(data.error || 'Failed to delete template');
       }
 
-      setTemplates((prev) =>
-        prev.filter((t) => t.id !== id && t.slug !== id && (!slug || (t.slug !== slug && t.id !== slug)))
-      );
+      removePoster(id, slug);
       showToast('Poster deleted successfully!', 'success');
       setError(null);
-      await reloadTemplates();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to delete template';
       setError(msg);
@@ -476,9 +450,7 @@ export default function AdminDashboard() {
       if (!res.ok) {
         throw new Error(updated?.error || 'Failed to save configuration');
       }
-      setTemplates((prev) =>
-        prev.map((t) => (t.id === updated.id || t.slug === updated.slug ? updated : t))
-      );
+      updatePoster(updated);
       showToast('Configuration saved successfully!', 'success');
       setEditingTemplate(null);
       setEditingPhotoArea(null);
